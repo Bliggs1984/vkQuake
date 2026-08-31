@@ -222,11 +222,16 @@ Steam library folder config parsing
 Examines all steam library folders and returns the path of the one containing the game with the given appid
 ========================
 */
+#define MAX_STEAM_LIBRARIES 32
+
 typedef struct
 {
 	const char *appid;
 	const char *current;
-	const char *result;
+	// every library folder that lists the app. libraryfolders.vdf keeps stale entries for
+	// libraries on disconnected drives, so all candidates are kept and probed for a manifest.
+	const char *results[MAX_STEAM_LIBRARIES];
+	int			numresults;
 } libsparser_t;
 
 static void VDB_OnLibFolderProperty (vdbcontext_t *ctx, const char *key, const char *value)
@@ -243,7 +248,8 @@ static void VDB_OnLibFolderProperty (vdbcontext_t *ctx, const char *key, const c
 		}
 		else if (ctx->depth == 3 && !strcmp (key, parser->appid) && !strcmp (ctx->path[2], "apps"))
 		{
-			parser->result = parser->current;
+			if (parser->current && parser->numresults < MAX_STEAM_LIBRARIES)
+				parser->results[parser->numresults++] = parser->current;
 		}
 	}
 }
@@ -310,11 +316,13 @@ Finds the Steam library and subdirectory for the given appid
 qboolean Steam_FindGame (steamgame_t *game, int appid)
 {
 	char		 appidstr[32], path[MAX_OSPATH];
-	char		*steamcfg, *manifest;
+	char		*steamcfg, *manifest = NULL;
+	const char	*library = NULL;
 	libsparser_t libparser;
 	acfparser_t	 acfparser;
 	size_t		 liblen, sublen;
 	qboolean	 ret = false;
+	int			 i;
 
 	game->appid = appid;
 	game->subdir = NULL;
@@ -330,19 +338,26 @@ qboolean Steam_FindGame (steamgame_t *game, int appid)
 	q_snprintf (appidstr, sizeof (appidstr), "%d", appid);
 	memset (&libparser, 0, sizeof (libparser));
 	libparser.appid = appidstr;
-	if (!VDB_Parse (steamcfg, VDB_OnLibFolderProperty, &libparser) || !libparser.result)
+	if (!VDB_Parse (steamcfg, VDB_OnLibFolderProperty, &libparser) || !libparser.numresults)
 	{
 		Sys_Printf ("ERROR: Couldn't parse Steam library.\n");
 		goto done_cfg;
 	}
 
-	if ((size_t)q_snprintf (path, sizeof (path), "%s/steamapps/appmanifest_%s.acf", libparser.result, appidstr) >= sizeof (path))
+	// first library with a readable manifest wins (skips libraries on unplugged drives)
+	for (i = 0; i < libparser.numresults && !manifest; i++)
 	{
-		Sys_Printf ("ERROR: Couldn't read Steam manifest for app %s (path too long).\n", appidstr);
-		goto done_cfg;
+		if ((size_t)q_snprintf (path, sizeof (path), "%s/steamapps/appmanifest_%s.acf", libparser.results[i], appidstr) >= sizeof (path))
+		{
+			Sys_Printf ("Steam library %s: manifest path for app %s is too long, skipping.\n", libparser.results[i], appidstr);
+			continue;
+		}
+		manifest = (char *)COM_LoadMallocFile_TextMode_OSPath (path, NULL);
+		if (manifest)
+			library = libparser.results[i];
+		else
+			Sys_Printf ("Steam library %s lists app %s but has no readable manifest, skipping.\n", libparser.results[i], appidstr);
 	}
-
-	manifest = (char *)COM_LoadMallocFile_TextMode_OSPath (path, NULL);
 	if (!manifest)
 	{
 		Sys_Printf ("ERROR: Couldn't read Steam manifest for app %s.\n", appidstr);
@@ -356,7 +371,7 @@ qboolean Steam_FindGame (steamgame_t *game, int appid)
 		goto done_manifest;
 	}
 
-	liblen = strlen (libparser.result);
+	liblen = strlen (library);
 	sublen = strlen (acfparser.result);
 
 	if (liblen + 1 + sublen + 1 > countof (game->library))
@@ -365,7 +380,7 @@ qboolean Steam_FindGame (steamgame_t *game, int appid)
 		goto done_manifest;
 	}
 
-	memcpy (game->library, libparser.result, liblen + 1);
+	memcpy (game->library, library, liblen + 1);
 	game->subdir = game->library + liblen + 1;
 	memcpy (game->subdir, acfparser.result, sublen + 1);
 	ret = true;
