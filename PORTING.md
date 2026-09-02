@@ -80,9 +80,30 @@ rt_gl_texmgr (9), rt_gl_sky (8), rt_gl_rlight (7), rt_gl_draw (5), rt_r_part (3)
    gl_fog.c, gl_model.c, host_cmd.c, view.c, cl_main.c, cl_demo.c, cl_parse.c, gl_refrag.c — these
    are the `#if RT_RENDERER` re-applications onto the 1.36 gameplay/UI files (PORTING table row 2).
 
-After compile-clean: link (RTGL1.lib + shaders), then boot = Stage 1 checkpoint. The two big files
-(rt_r_alias, rt_gl_mesh = the alias-model upload path) are the hardest and touch the MD5-era
-`aliashdr` layout; `posedata`/`meshdesc` members no longer exist in 1.36.
+After compile-clean: link (RTGL1.lib + shaders), then boot = Stage 1 checkpoint.
+
+### Alias-model cliff (rt_r_alias.c 69, rt_gl_mesh.c 62) — the remaining Stage 1 work
+
+14/16 RT files compile clean. The last two are the alias (monster/weapon `.mdl`) path and need
+real porting, not mechanical fixes, because 1.36 redesigned two structures:
+
+- **entity lerp**: 1.20.3/fork used flat `entity_t` fields (`currentorigin`, `previousorigin`,
+  `currentpose`, `lerpflags`, `lerpstart`, `lerpfinish`, `lerptime`, `movelerpstart`, `LERP_*`).
+  1.36 replaced all of it with a nested `entlerp_t lerp` using a different model
+  (`prev_frame`, `frame_change_time`, `frame_duration`, `prev_origin`, `move_change_time`...).
+  → rt_r_alias.c's lerp math must be rewritten to consume 1.36's `R_SetupAliasFrame`/`lerpdata_t`.
+- **aliashdr mesh storage**: fork read `commands`/`posedata`/`poseverts`/`vertexes`/`indexes`/
+  `meshdesc`; 1.36 stores meshes as VBOs (`vertex_buffer`, `index_buffer`, `meshst_t`, MD5 joints).
+  → rt_gl_mesh.c must build the RgVertex/rtindices arrays from 1.36's aliashdr instead.
+
+**Two ways forward (Brett's call):**
+1. **Stub-to-boot (fast):** compile rt_r_alias/rt_gl_mesh as no-ops so the build links and BOOTS to
+   a ray-traced menu + world (no monsters/weapons drawn yet). Validates the whole RTGL1 pipeline on
+   the RTX 5080, then reintroduce alias rendering. Fastest path to something runnable.
+2. **Port alias now:** rewrite both files against 1.36 structs before first boot. No runnable build
+   until done; larger single chunk; monsters/weapons work on first boot.
+
+MD5 skeletal fidelity stays Stage 5 (optional) either way — classic `.mdl` first.
 
 `scripts/build.ps1` still targets the `modernise-2026` layout; adapt after the vcxproj configs exist
 (`-p:PlatformToolset=v143`, embedded shader project needs `glslangValidator` from the Vulkan SDK).
