@@ -53,10 +53,36 @@ Upstream 1.36 features that interact with RT and need decisions during the port:
 - [x] Stage 0: vanilla 1.36.0 builds (v143), SDL 3.4.12, Steam API up, achievement fired (Brett, 31 Aug)
 - [x] steam.c multi-library fix (`e0d31a7`)
 - [x] Submodule + patches + ovrd assets on `rt-1.36`
-- [ ] RT build configurations in vcxproj
-- [ ] `rt_*.c` seeded and compiling
+- [x] RT-Release/RT-Debug build configurations in vcxproj + sln (RT_RENDERER, RTGL1 lib, no PCH)
+- [~] `rt_*.c` seeded; **6/16 compile clean standalone**, 190 errors remain (was 293)
 - [ ] Stage 1 checkpoint: boots to console/menu under RTGL1
 - [ ] Stage 2 world, Stage 3 dynamic, Stage 4 ship, Stage 5 MD5 (optional)
+
+### Standalone compile status (RT defines, `tools_tmp/rtcompile.ps1`)
+
+Clean: rt_gl_heap, rt_gl_rmain, rt_gl_vidsdl, rt_gl_warp, rt_r_sprite, rt_r_world.
+Remaining: rt_r_alias (69), rt_gl_mesh (62), rt_r_part_fte (15), rt_gl_rmisc (11),
+rt_gl_texmgr (9), rt_gl_sky (8), rt_gl_rlight (7), rt_gl_draw (5), rt_r_part (3), rt_r_brush (1).
+
+### Error patterns identified (the remaining Stage-1 work)
+
+1. **Changed shared prototypes** — 1.36 altered signatures the RT files call with 1.20.3 shapes
+   (e.g. `Draw_String` int→float x/y). Fix: `#if RT_RENDERER` prototype sections in draw.h/
+   render.h/screen.h restoring the fork/1.20.3 shapes (the fork didn't touch these headers because
+   it *was* 1.20.3). Clears most C2197/C2198 across several files at once.
+2. **`num_vulkan_*_allocations`** counters changed int→atomic in 1.36 (`rt_gl_rmisc.c` C2371) —
+   reconcile decl/type.
+3. **SDL3 renames** — RT seeds use `SDL_mutex`; under USE_SDL3 need `SDL_Mutex` (the `#ifndef
+   USE_SDL3` compat block in quakedef.h only covers the other direction).
+4. **`rht_*` / `rhtctx_s` / `lightcache_s`** raster-hit-test types in `r_part_fte.c` now collide
+   with 1.36 definitions — guard or rename.
+5. **Shared-file inline guards not yet applied**: gl_screen.c (27), menu.c (15), pr_ext.c (42),
+   gl_fog.c, gl_model.c, host_cmd.c, view.c, cl_main.c, cl_demo.c, cl_parse.c, gl_refrag.c — these
+   are the `#if RT_RENDERER` re-applications onto the 1.36 gameplay/UI files (PORTING table row 2).
+
+After compile-clean: link (RTGL1.lib + shaders), then boot = Stage 1 checkpoint. The two big files
+(rt_r_alias, rt_gl_mesh = the alias-model upload path) are the hardest and touch the MD5-era
+`aliashdr` layout; `posedata`/`meshdesc` members no longer exist in 1.36.
 
 `scripts/build.ps1` still targets the `modernise-2026` layout; adapt after the vcxproj configs exist
 (`-p:PlatformToolset=v143`, embedded shader project needs `glslangValidator` from the Vulkan SDK).
