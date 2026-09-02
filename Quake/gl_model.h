@@ -28,6 +28,10 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "spritegn.h"
 #include "atomics.h"
 
+#ifdef RT_RENDERER
+#include <RTGL1/RTGL1.h> // RgVertex in qmodel_t
+#endif
+
 /*
 
 d*_t structures are on-disk representations
@@ -721,10 +725,16 @@ typedef struct qmodel_s
 	//
 	byte *extradata[PV_SIZE]; // only access through Mod_Extradata
 
-	// Ray tracing
+#ifdef RT_RENDERER
+	// RT renderer: CPU-side alias mesh, built at load time and streamed to RTGL1 per frame
+	uint32_t *rtindices;  // hdr->numindexes
+	RgVertex *rtvertices; // hdr->numposes * hdr->numverts_vbo
+#else
+	// Ray tracing (vanilla renderer's ray-query dynamic shadows)
 	VkAccelerationStructureKHR blas;
 	VkBuffer				   buffer;
 	VkDeviceAddress			   address;
+#endif
 } qmodel_t;
 
 //============================================================================

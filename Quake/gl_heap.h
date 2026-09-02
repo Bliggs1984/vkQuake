@@ -20,6 +20,18 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #ifndef __HEAP__
 #define __HEAP__
+#ifdef RT_RENDERER
+#include "quakedef.h" // uint32_t / RgVertex etc. when included first
+
+// RT renderer: simple scratch allocators (definitions in rt_gl_heap.c). !!NOT THREAD SAFE!!
+int RT_GetFanIndexCount (int vertexcount);
+// Don't call if a previously returned pointer is still in use; no need to free.
+const uint32_t *RT_GetFanIndices (int vertexcount);
+void *RT_AllocScratchMemory (size_t bytecount);
+void *RT_AllocScratchMemoryNulled (size_t bytecount);
+
+#else // vanilla Vulkan heap
+
 
 typedef struct glheap_s			  glheap_t;
 typedef struct glheapallocation_s glheapallocation_t;
@@ -53,5 +65,7 @@ glheapstats_t	   *GL_HeapGetStats (glheap_t *heap);
 #ifdef _DEBUG
 void GL_HeapTest_f (void);
 #endif
+
+#endif // RT_RENDERER
 
 #endif

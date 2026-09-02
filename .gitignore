@@ -42,3 +42,8 @@ helgrind.log
 .cache/
 *.user
 *.user
+
+Dist/
+*.obj
+NUL
+NUL.obj

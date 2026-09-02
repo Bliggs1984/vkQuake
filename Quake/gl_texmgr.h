@@ -46,6 +46,7 @@ typedef enum
 	TEXPREF_WARPIMAGE       = 0x0800,   // resize this texture when warpimagesize changes
 	TEXPREF_PREMULTIPLY     = 0x1000,   // rgb = rgb*a; a=a;
 	TEXPREF_ALPHAPIXELS     = 0x2000,   // has demonstratable alpha pixels, mostly used for md3/md5
+	TEXPREF_RT_IS_EMISSIVE  = 0x4000,   // RT renderer: treat as emissive material
 } textureflags_t;
 // clang-format on
 
@@ -60,6 +61,19 @@ enum srcformat
 };
 
 typedef struct glheapallocation_s glheapallocation_t;
+
+#ifdef RT_RENDERER
+#include <RTGL1/RTGL1.h>
+
+enum
+{
+	RT_CUSTOMTEXTUREINFO_TYPE_NONE,
+	RT_CUSTOMTEXTUREINFO_TYPE_POLY_LIGHT,
+	RT_CUSTOMTEXTUREINFO_TYPE_RASTER_LIGHT,
+	RT_CUSTOMTEXTUREINFO_TYPE_MIRROR,
+	RT_CUSTOMTEXTUREINFO_TYPE_EXACT_NORMALS,
+};
+#endif
 
 typedef struct gltexture_s
 {
@@ -82,6 +96,13 @@ typedef struct gltexture_s
 	signed char			shirt;					// 0-13 shirt color, or -1 if never colormapped
 	signed char			pants;					// 0-13 pants color, or -1 if never colormapped
 	// used for rendering
+#ifdef RT_RENDERER
+	char				rtname[64];
+	RgMaterial			rtmaterial;
+	vec3_t				rtlightcolor;
+	int					rtcustomtextype; // RT_CUSTOMTEXTUREINFO_*
+	float				rtupoffset;
+#else
 	VkImage				image;
 	VkImageView			image_view;
 	VkImageView			target_image_view;
@@ -89,6 +110,7 @@ typedef struct gltexture_s
 	VkDescriptorSet		descriptor_set;
 	VkFramebuffer		frame_buffer;
 	VkDescriptorSet		storage_descriptor_set;
+#endif
 } gltexture_t;
 
 extern gltexture_t *notexture;
