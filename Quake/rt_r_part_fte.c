@@ -531,23 +531,23 @@ static unsigned int    cl_numstrisidx;
 static unsigned int    cl_maxstrisidx[2];
 
 /*
-Q1BSP_RecursiveHullTrace
+RTFTE_RecursiveHullTrace
 Optimised version of vanilla's SV_RecursiveHullCheck that avoids the excessive pointcontents calls by using the traceline itself to check for contents.
 call Q1BSP_RecursiveHullCheck for a drop-in replacement of SV_RecursiveHullCheck, if desired.
 */
 enum
 {
-	rht_solid,
-	rht_empty,
-	rht_impact
+	rtfte_rht_solid,
+	rtfte_rht_empty,
+	rtfte_rht_impact
 };
-struct rhtctx_s
+struct rtfte_rhtctx_s
 {
 	vec3_t       start, end;
 	mclipnode_t *clipnodes;
 	mplane_t    *planes;
 };
-static int Q1BSP_RecursiveHullTrace (struct rhtctx_s *ctx, int num, float p1f, float p2f, vec3_t p1, vec3_t p2, trace_t *trace)
+static int RTFTE_RecursiveHullTrace (struct rtfte_rhtctx_s *ctx, int num, float p1f, float p2f, vec3_t p1, vec3_t p2, trace_t *trace)
 {
 	mclipnode_t *node;
 	mplane_t    *plane;
@@ -566,7 +566,7 @@ reenter:
 		{
 			if (trace->allsolid)
 				trace->startsolid = true;
-			return rht_solid;
+			return rtfte_rht_solid;
 		}
 		else
 		{
@@ -575,7 +575,7 @@ reenter:
 				trace->inopen = true;
 			else
 				trace->inwater = true;
-			return rht_empty;
+			return rtfte_rht_empty;
 		}
 	}
 
@@ -628,11 +628,11 @@ reenter:
 		midf = p2f;
 	VectorInterpolate (ctx->start, midf, ctx->end, mid);
 
-	rht = Q1BSP_RecursiveHullTrace (ctx, node->children[side], p1f, midf, p1, mid, trace);
-	if (rht != rht_empty && !trace->allsolid)
+	rht = RTFTE_RecursiveHullTrace (ctx, node->children[side], p1f, midf, p1, mid, trace);
+	if (rht != rtfte_rht_empty && !trace->allsolid)
 		return rht;
-	rht = Q1BSP_RecursiveHullTrace (ctx, node->children[side ^ 1], midf, p2f, mid, p2, trace);
-	if (rht != rht_solid)
+	rht = RTFTE_RecursiveHullTrace (ctx, node->children[side ^ 1], midf, p2f, mid, p2, trace);
+	if (rht != rtfte_rht_solid)
 		return rht;
 
 	if (side)
@@ -661,18 +661,18 @@ reenter:
 	VectorCopy (mid, trace->endpos);
 	VectorInterpolate (ctx->start, midf, ctx->end, trace->endpos);
 
-	return rht_impact;
+	return rtfte_rht_impact;
 }
 static qboolean Q1BSP_RecursiveHullCheck (hull_t *hull, int num, float p1f, float p2f, vec3_t p1, vec3_t p2, trace_t *trace)
 {
 	// this function is basicall meant as a drop-in replacement for fte's SV_RecursiveHullCheck. p1f and p2f must be 0+1 respectively, num must be
 	// hull->firstclipnode
-	struct rhtctx_s ctx;
+	struct rtfte_rhtctx_s ctx;
 	VectorCopy (p1, ctx.start);
 	VectorCopy (p2, ctx.end);
 	ctx.clipnodes = hull->clipnodes;
 	ctx.planes = hull->planes;
-	return Q1BSP_RecursiveHullTrace (&ctx, num, p1f, p2f, p1, p2, trace) != rht_impact;
+	return RTFTE_RecursiveHullTrace (&ctx, num, p1f, p2f, p1, p2, trace) != rtfte_rht_impact;
 }
 
 float CL_TraceLine (vec3_t start, vec3_t end, vec3_t impact, vec3_t normal, int *entnum)
@@ -1164,12 +1164,12 @@ static void P_LoadTexture (part_type_t *ptype, qboolean warn)
 			if (!data)
 			{
 				q_snprintf (filename, sizeof (filename), "textures/%s", ptype->texname);
-				data = Image_LoadImage (filename, &fwidth, &fheight);
+				enum srcformat imgfmt_unused; data = Image_LoadImage (filename, &fwidth, &fheight, &imgfmt_unused, 0);
 			}
 			if (!data)
 			{
 				q_snprintf (filename, sizeof (filename), "%s", ptype->texname);
-				data = Image_LoadImage (filename, &fwidth, &fheight);
+				enum srcformat imgfmt_unused; data = Image_LoadImage (filename, &fwidth, &fheight, &imgfmt_unused, 0);
 			}
 
 			if (data)

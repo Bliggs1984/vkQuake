@@ -37,6 +37,12 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define CVAR_TO_FLOAT(x)  ((x).value)
 #define CVAR_TO_UINT32(x) (((x).value > 0.5f) ? ((uint32_t)(x).value) : 0u)
 #define CVAR_TO_INT32(x)  ((int)(x).value)
+// The 2022 RT sources use the SDL2 mutex type name; SDL3 poisons the lowercase
+// alias, so map it to the SDL3 type. (Function names SDL_LockMutex etc. are unchanged.)
+#ifdef USE_SDL3
+	#undef SDL_mutex
+	#define SDL_mutex SDL_Mutex
+#endif
 // -------------------------------------------------------------
 
 #include "atomics.h"

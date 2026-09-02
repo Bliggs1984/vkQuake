@@ -57,17 +57,17 @@ extern gltexture_t *playertextures[MAX_SCOREBOARD]; // johnfitz
 
 vulkanglobals_t vulkan_globals;
 
-int    num_vulkan_tex_allocations = 0;
-int    num_vulkan_bmodel_allocations = 0;
-int    num_vulkan_mesh_allocations = 0;
-int    num_vulkan_misc_allocations = 0;
-int    num_vulkan_dynbuf_allocations = 0;
-int    num_vulkan_combined_image_samplers = 0;
-int    num_vulkan_ubos_dynamic = 0;
+atomic_uint32_t num_vulkan_tex_allocations = {0};
+atomic_uint32_t num_vulkan_bmodel_allocations = {0};
+atomic_uint32_t num_vulkan_mesh_allocations = {0};
+atomic_uint32_t num_vulkan_misc_allocations = {0};
+atomic_uint32_t num_vulkan_dynbuf_allocations = {0};
+atomic_uint32_t num_vulkan_combined_image_samplers = {0};
+atomic_uint32_t num_vulkan_ubos_dynamic = {0};
 int    num_vulkan_ubos = 0;
 int    num_vulkan_storage_buffers = 0;
-int    num_vulkan_input_attachments = 0;
-int    num_vulkan_storage_images = 0;
+atomic_uint32_t num_vulkan_input_attachments = {0};
+atomic_uint32_t num_vulkan_storage_images = {0};
 size_t total_device_vulkan_allocation_size = 0;
 size_t total_host_vulkan_allocation_size = 0;
 

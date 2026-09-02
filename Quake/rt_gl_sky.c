@@ -287,7 +287,7 @@ void        Sky_LoadSkyBox (const char *name)
 	for (i = 0; i < 6; i++)
 	{
 		q_snprintf (filename, sizeof (filename), "gfx/env/%s%s", name, suf[i]);
-		data = Image_LoadImage (filename, &width, &height);
+		enum srcformat imgfmt_unused; data = Image_LoadImage (filename, &width, &height, &imgfmt_unused, 0);
 		if (data)
 		{
 			skybox_textures[i] = TexMgr_LoadImage (filename, cl.worldmodel, filename, width, height, SRC_RGBA, data, filename, 0, TEXPREF_NONE);
@@ -698,7 +698,6 @@ Sky_DrawSkySurface
 static void Sky_DrawSkySurface (cb_context_t *cbx, float color[3], int entuniqueid, entity_t *e, qmodel_t *model, msurface_t *s, qboolean rotated, vec3_t forward, vec3_t right, vec3_t up)
 {
 	// copy the polygon and translate manually, since Sky_ProcessPoly needs it to be in world space
-	glpoly_t *p;
 	TEMP_ALLOC (glpoly_t, p, s->polys->numverts);
 	p->numverts = s->polys->numverts;
 	for (int k = 0; k < p->numverts; k++)

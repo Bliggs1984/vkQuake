@@ -358,7 +358,7 @@ int R_LightPoint (vec3_t p, lightcache_t *cache, vec3_t *lightcolor)
 
 	(*lightcolor)[0] = (*lightcolor)[1] = (*lightcolor)[2] = 0;
 
-	SDL_mutex *mtx = cache->mutex ? cache->mutex : lightcache_mutex;
+	SDL_mutex *mtx = lightcache_mutex; // RT: 1.36 lightcache_t has no per-cache mutex
 	SDL_LockMutex (mtx);
 	if (!cache || cache->surfidx <= 0 // no cache or pitch black
 	    || cache->surfidx > cl.worldmodel->numsurfaces || fabsf (cache->pos[0] - p[0]) >= 1.f || fabsf (cache->pos[1] - p[1]) >= 1.f ||

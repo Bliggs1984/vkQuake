@@ -140,9 +140,17 @@ void		 TexMgr_CollectGarbage (void);
 void		 TexMgr_LoadPalette (void);
 
 // IMAGE LOADING
+#ifdef RT_RENDERER
+// RT renderer adds a leading rtname (RTGL1 material name); see rt_gl_texmgr.c.
+gltexture_t *TexMgr_LoadImage (
+	const char *rtname,
+	qmodel_t *owner, const char *name, int width, int height, enum srcformat format, byte *data, const char *source_file, src_offset_t source_offset,
+	unsigned flags);
+#else
 gltexture_t *TexMgr_LoadImage (
 	qmodel_t *owner, const char *name, int width, int height, enum srcformat format, byte *data, const char *source_file, src_offset_t source_offset,
 	unsigned flags);
+#endif
 void TexMgr_ReloadImage (gltexture_t *glt, int shirt, int pants);
 void TexMgr_ReloadNobrightImages (void);
 
