@@ -1,0 +1,32 @@
+# Normalise line endings; keep binaries untouched.
+* text=auto
+
+*.c    text
+*.h    text
+*.cpp  text
+*.md   text
+*.txt  text
+*.yml  text
+*.json text
+*.py   text
+*.patch text eol=lf
+*.sh   text eol=lf
+*.ps1  text eol=crlf
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+*.sln  text eol=crlf
+*.vcxproj text eol=crlf
+*.vcxproj.filters text eol=crlf
+*.rc   text eol=crlf
+
+*.dll  binary
+*.lib  binary
+*.exe  binary
+*.pak  binary
+*.ktx2 binary
+*.spv  binary
+*.png  binary
+*.ico  binary
+*.lmp  binary
+*.zip  binary
+*.AppImage binary

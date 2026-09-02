@@ -1,0 +1,542 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 9adbe74..afd7d59 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -173,24 +173,32 @@ if (RG_WITH_NVIDIA_DLSS)
+     message(STATUS "RG_USE_NVIDIA_DLSS enabled")
+     add_definitions(-DRG_USE_NVIDIA_DLSS)
+ 
+-    if (DEFINED ENV{DLSS_SDK_PATH})
+-        message(STATUS "Found DLSS SDK: $ENV{DLSS_SDK_PATH}")
+-        target_include_directories(RayTracedGL1 PRIVATE "$ENV{DLSS_SDK_PATH}/include")
++    # DLSS_SDK_PATH may be given as a CMake cache variable or as an environment variable.
++    if (NOT DLSS_SDK_PATH AND DEFINED ENV{DLSS_SDK_PATH})
++        set(DLSS_SDK_PATH "$ENV{DLSS_SDK_PATH}")
++    endif()
++
++    if (DLSS_SDK_PATH)
++        message(STATUS "Found DLSS SDK: ${DLSS_SDK_PATH}")
++        target_include_directories(RayTracedGL1 PRIVATE "${DLSS_SDK_PATH}/include")
+         if (WIN32)
+             add_definitions(-DNV_WINDOWS)
+-            string(TOUPPER "${CMAKE_BUILD_TYPE}" BUILD_TYPE )
+-            if (BUILD_TYPE STREQUAL "DEBUG")
+-                target_link_libraries(RayTracedGL1 PRIVATE "$ENV{DLSS_SDK_PATH}/lib/Windows_x86_64/x86_64/nvsdk_ngx_d_dbg.lib")
+-            else()
+-                target_link_libraries(RayTracedGL1 PRIVATE "$ENV{DLSS_SDK_PATH}/lib/Windows_x86_64/x86_64/nvsdk_ngx_d.lib")
++            # DLSS SDK 3.1+ (incl. 310.x / DLSS 4.x) ships the import libraries in lib/Windows_x86_64/x64;
++            # older SDKs used lib/Windows_x86_64/x86_64. Accept both.
++            set(_ngx_lib_dir "${DLSS_SDK_PATH}/lib/Windows_x86_64/x64")
++            if (NOT EXISTS "${_ngx_lib_dir}")
++                set(_ngx_lib_dir "${DLSS_SDK_PATH}/lib/Windows_x86_64/x86_64")
+             endif()
++            # nvsdk_ngx_d*.lib = dynamic CRT (/MD, /MDd), which is what CMake uses by default for MSVC.
++            target_link_libraries(RayTracedGL1 PRIVATE
++                "$<IF:$<CONFIG:Debug>,${_ngx_lib_dir}/nvsdk_ngx_d_dbg.lib,${_ngx_lib_dir}/nvsdk_ngx_d.lib>")
+         else()
+-            target_link_libraries(RayTracedGL1 PRIVATE "$ENV{DLSS_SDK_PATH}/lib/Linux_x86_64/libnvsdk_ngx.a")
++            target_link_libraries(RayTracedGL1 PRIVATE "${DLSS_SDK_PATH}/lib/Linux_x86_64/libnvsdk_ngx.a")
+             target_link_libraries(RayTracedGL1 PRIVATE ${CMAKE_DL_LIBS})
+         endif()
+     else()
+-        message(FATAL_ERROR 
+-            "Can't find DLSS_SDK_PATH environment variable. "
++        message(FATAL_ERROR
++            "Can't find DLSS_SDK_PATH (CMake variable or environment variable). "
+             "Please, provide the path to https://github.com/NVIDIA/DLSS, to configure the library")
+     endif()
+ endif()
+diff --git a/CMakePresets.json b/CMakePresets.json
+new file mode 100644
+index 0000000..010996a
+--- /dev/null
++++ b/CMakePresets.json
+@@ -0,0 +1,42 @@
++{
++  "version": 3,
++  "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
++  "configurePresets": [
++    {
++      "name": "win-base",
++      "hidden": true,
++      "generator": "Ninja",
++      "binaryDir": "${sourceDir}/Build/${presetName}",
++      "cacheVariables": {
++        "RG_WITH_SURFACE_WIN32": "ON",
++        "RG_WITH_EXAMPLES": "OFF",
++        "RG_WITH_NVIDIA_DLSS": "ON",
++        "DLSS_SDK_PATH": "$env{DLSS_SDK_PATH}"
++      },
++      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
++    },
++    {
++      "name": "x64-Release",
++      "inherits": "win-base",
++      "displayName": "Windows x64 Release (DLSS)",
++      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo" }
++    },
++    {
++      "name": "x64-Debug",
++      "inherits": "win-base",
++      "displayName": "Windows x64 Debug (DLSS)",
++      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
++    },
++    {
++      "name": "x64-Release-NoDLSS",
++      "inherits": "win-base",
++      "displayName": "Windows x64 Release (no DLSS)",
++      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo", "RG_WITH_NVIDIA_DLSS": "OFF" }
++    }
++  ],
++  "buildPresets": [
++    { "name": "x64-Release", "configurePreset": "x64-Release" },
++    { "name": "x64-Debug", "configurePreset": "x64-Debug" },
++    { "name": "x64-Release-NoDLSS", "configurePreset": "x64-Release-NoDLSS" }
++  ]
++}
+diff --git a/Include/RTGL1/RTGL1.h b/Include/RTGL1/RTGL1.h
+index 8911724..3ffb9ec 100644
+--- a/Include/RTGL1/RTGL1.h
++++ b/Include/RTGL1/RTGL1.h
+@@ -963,7 +963,7 @@ typedef struct RgDrawFrameVolumetricParams
+     // Volumetric directional light source parameters.
+     RgFloat3D   sourceColor;
+     RgFloat3D   sourceDirection;
+-    // g parameter [-1..1] for the Henyey–Greenstein phase function.
++    // g parameter [-1..1] for the Henyeyï¿½Greenstein phase function.
+     // Default: 0.0 (isotropic)
+     float       sourceAssymetry;
+ } RgDrawFrameVolumetricParams;
+@@ -1120,12 +1120,31 @@ typedef enum RgRenderResolutionMode
+     RG_RENDER_RESOLUTION_MODE_BALANCED,
+     RG_RENDER_RESOLUTION_MODE_QUALITY,
+     RG_RENDER_RESOLUTION_MODE_ULTRA_QUALITY,    // with AMD_FSR, same as QUALITY
++    // Native resolution anti-aliasing: render at output resolution and let the
++    // upscaler act purely as a temporal AA (Nvidia DLAA / AMD FSR2 Native AA).
++    // Ignored for LINEAR / NEAREST techniques.
++    RG_RENDER_RESOLUTION_MODE_DLAA,
+ } RgRenderResolutionMode;
+ 
++// Selects the DLSS Super Resolution neural network ("render preset").
++// Only meaningful with RG_RENDER_UPSCALE_TECHNIQUE_NVIDIA_DLSS.
++typedef enum RgRenderDlssPreset
++{
++    // Let the DLSS DLL / driver choose per quality mode.
++    RG_RENDER_DLSS_PRESET_DEFAULT,
++    // DLSS 4 transformer model (preset K). Best choice for RTX 20/30 series.
++    RG_RENDER_DLSS_PRESET_TRANSFORMER_K,
++    // DLSS 4.5 second-generation transformer, tuned for Ultra Performance (preset L).
++    RG_RENDER_DLSS_PRESET_TRANSFORMER_L,
++    // DLSS 4.5 second-generation transformer, tuned for Performance (preset M).
++    // Recommended default on RTX 40/50 series (FP8 accelerated).
++    RG_RENDER_DLSS_PRESET_TRANSFORMER_M,
++} RgRenderDlssPreset;
++
+ typedef struct RgDrawFrameRenderResolutionParams
+ {
+     RgRenderUpscaleTechnique    upscaleTechnique;
+-    RgRenderSharpenTechnique    sharpenTechnique; 
++    RgRenderSharpenTechnique    sharpenTechnique;
+     RgRenderResolutionMode      resolutionMode;
+     // Used, if resolutionMode is RG_RENDER_RESOLUTION_MODE_CUSTOM
+     RgExtent2D                  customRenderSize;
+@@ -1133,6 +1152,8 @@ typedef struct RgDrawFrameRenderResolutionParams
+     // Needed, if pixelized look is needed, but the actual rendering should
+     // be done in higher resolution.
+     const RgExtent2D            *pPixelizedRenderSize;
++    // DLSS neural network selection, see RgRenderDlssPreset.
++    RgRenderDlssPreset          dlssPreset;
+ } RgDrawFrameRenderResolutionParams;
+ 
+ typedef struct RgDrawFrameLensFlareParams
+diff --git a/Source/DLSS.cpp b/Source/DLSS.cpp
+index 75d5182..2141fb6 100644
+--- a/Source/DLSS.cpp
++++ b/Source/DLSS.cpp
+@@ -100,11 +100,11 @@ bool RTGL1::DLSS::TryInit(VkInstance instance, VkDevice device, VkPhysicalDevice
+     pathsInfo.Path = &dllPath_c;
+     pathsInfo.Length = 1;
+ 
+-    NGSDK_NGX_LoggingInfo debugLogInfo = {};
++    NVSDK_NGX_LoggingInfo debugLogInfo = {};
+     debugLogInfo.LoggingCallback = &PrintCallback;
+     debugLogInfo.MinimumLoggingLevel = NVSDK_NGX_Logging_Level::NVSDK_NGX_LOGGING_LEVEL_ON;
+ 
+-    NGSDK_NGX_LoggingInfo releaseLogInfo = {};
++    NVSDK_NGX_LoggingInfo releaseLogInfo = {};
+ 
+     NVSDK_NGX_FeatureCommonInfo commonInfo = {};
+     commonInfo.PathListInfo = pathsInfo;
+@@ -122,9 +122,11 @@ bool RTGL1::DLSS::TryInit(VkInstance instance, VkDevice device, VkPhysicalDevice
+         throw RgException(RG_WRONG_ARGUMENT, "Provided application GUID is not GUID. Generate and specify correct GUID to use DLSS.");
+     }
+ 
++    // DLSS SDK 3.1+ signature: loader entry points are passed explicitly (needed for DLSS 4.x DLLs).
+     r = NVSDK_NGX_VULKAN_Init_with_ProjectID(
+         pAppGuid,
+-        NVSDK_NGX_EngineType::NVSDK_NGX_ENGINE_TYPE_CUSTOM, RG_RTGL_VERSION_API, L"DLSSTemp/", instance, physDevice, device, &commonInfo);
++        NVSDK_NGX_EngineType::NVSDK_NGX_ENGINE_TYPE_CUSTOM, RG_RTGL_VERSION_API, L"DLSSTemp/", instance, physDevice, device,
++        vkGetInstanceProcAddr, vkGetDeviceProcAddr, &commonInfo, NVSDK_NGX_Version_API);
+ 
+     if (NVSDK_NGX_FAILED(r))
+     {
+@@ -134,7 +136,7 @@ bool RTGL1::DLSS::TryInit(VkInstance instance, VkDevice device, VkPhysicalDevice
+     r = NVSDK_NGX_VULKAN_GetCapabilityParameters(&pParams);
+     if (NVSDK_NGX_FAILED(r))
+     {
+-        NVSDK_NGX_VULKAN_Shutdown();
++        NVSDK_NGX_VULKAN_Shutdown1(device);
+         pParams = nullptr;
+         
+         return false;
+@@ -229,7 +231,7 @@ void RTGL1::DLSS::Destroy()
+         }
+ 
+         NVSDK_NGX_VULKAN_DestroyParameters(pParams);
+-        NVSDK_NGX_VULKAN_Shutdown();
++        NVSDK_NGX_VULKAN_Shutdown1(device);
+ 
+         pParams = nullptr;
+         isInitialized = false;
+@@ -255,19 +257,55 @@ static NVSDK_NGX_PerfQuality_Value ToNGXPerfQuality(RgRenderResolutionMode mode)
+             return NVSDK_NGX_PerfQuality_Value::NVSDK_NGX_PerfQuality_Value_MaxQuality;
+         case RG_RENDER_RESOLUTION_MODE_ULTRA_QUALITY:
+             return NVSDK_NGX_PerfQuality_Value::NVSDK_NGX_PerfQuality_Value_UltraQuality;
++        case RG_RENDER_RESOLUTION_MODE_DLAA:
++            return NVSDK_NGX_PerfQuality_Value::NVSDK_NGX_PerfQuality_Value_DLAA;
+         default:
+-            assert(0); 
++            assert(0);
+             return NVSDK_NGX_PerfQuality_Value::NVSDK_NGX_PerfQuality_Value_Balanced;
+     }
+ }
+ 
++static NVSDK_NGX_DLSS_Hint_Render_Preset ToNGXRenderPreset(RgRenderDlssPreset preset)
++{
++    switch (preset)
++    {
++        case RG_RENDER_DLSS_PRESET_TRANSFORMER_K: return NVSDK_NGX_DLSS_Hint_Render_Preset_K;
++        case RG_RENDER_DLSS_PRESET_TRANSFORMER_L: return NVSDK_NGX_DLSS_Hint_Render_Preset_L;
++        case RG_RENDER_DLSS_PRESET_TRANSFORMER_M: return NVSDK_NGX_DLSS_Hint_Render_Preset_M;
++        case RG_RENDER_DLSS_PRESET_DEFAULT:
++        default:                                  return NVSDK_NGX_DLSS_Hint_Render_Preset_Default;
++    }
++}
++
++void RTGL1::DLSS::ApplyRenderPresetHints(RgRenderDlssPreset preset) const
++{
++    if (pParams == nullptr)
++    {
++        return;
++    }
++
++    // DLSS 4 / 4.5: the network is chosen per quality mode via these hints.
++    // Preset_Default lets the nvngx_dlss.dll decide (K for DLAA/Quality/Balanced,
++    // M for Performance, L for Ultra Performance with a 310.5+ DLL).
++    const unsigned int p = static_cast<unsigned int>(ToNGXRenderPreset(preset));
++
++    NVSDK_NGX_Parameter_SetUI(pParams, NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_DLAA,             p);
++    NVSDK_NGX_Parameter_SetUI(pParams, NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_UltraQuality,     p);
++    NVSDK_NGX_Parameter_SetUI(pParams, NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_Quality,          p);
++    NVSDK_NGX_Parameter_SetUI(pParams, NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_Balanced,         p);
++    NVSDK_NGX_Parameter_SetUI(pParams, NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_Performance,      p);
++    NVSDK_NGX_Parameter_SetUI(pParams, NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_UltraPerformance, p);
++}
++
+ bool RTGL1::DLSS::AreSameDlssFeatureValues(const RenderResolutionHelper &renderResolution) const
+ {
+-    return  
++    return
+         prevDlssFeatureValues.renderWidth    == renderResolution.Width() &&
+         prevDlssFeatureValues.renderHeight   == renderResolution.Height() &&
+         prevDlssFeatureValues.upscaledWidth  == renderResolution.UpscaledWidth() &&
+-        prevDlssFeatureValues.upscaledHeight == renderResolution.UpscaledHeight();
++        prevDlssFeatureValues.upscaledHeight == renderResolution.UpscaledHeight() &&
++        prevDlssFeatureValues.resolutionMode == renderResolution.GetResolutionMode() &&
++        prevDlssFeatureValues.preset         == renderResolution.GetNvDlssPreset();
+ }
+ 
+ void RTGL1::DLSS::SaveDlssFeatureValues(const RenderResolutionHelper &renderResolution)
+@@ -276,6 +314,8 @@ void RTGL1::DLSS::SaveDlssFeatureValues(const RenderResolutionHelper &renderReso
+     prevDlssFeatureValues.renderHeight = renderResolution.Height();
+     prevDlssFeatureValues.upscaledWidth = renderResolution.UpscaledWidth();
+     prevDlssFeatureValues.upscaledHeight = renderResolution.UpscaledHeight();
++    prevDlssFeatureValues.resolutionMode = renderResolution.GetResolutionMode();
++    prevDlssFeatureValues.preset = renderResolution.GetNvDlssPreset();
+ }
+ 
+ bool RTGL1::DLSS::ValidateDlssFeature(VkCommandBuffer cmd, const RenderResolutionHelper &renderResolution)
+@@ -299,12 +339,19 @@ bool RTGL1::DLSS::ValidateDlssFeature(VkCommandBuffer cmd, const RenderResolutio
+     }
+ 
+ 
++    // Network selection must be written before NGX_VULKAN_CREATE_DLSS_EXT.
++    ApplyRenderPresetHints(renderResolution.GetNvDlssPreset());
++
+     NVSDK_NGX_DLSS_Create_Params dlssParams = {};
+     dlssParams.Feature.InWidth = renderResolution.Width();
+     dlssParams.Feature.InHeight = renderResolution.Height();
+     dlssParams.Feature.InTargetWidth = renderResolution.UpscaledWidth();
+     dlssParams.Feature.InTargetHeight = renderResolution.UpscaledHeight();
+-    // dlssParams.Feature.InPerfQualityValue = ToNGXPerfQuality(renderResolution.GetResolutionMode());
++    // The quality value is what the DLL uses to pick the per-mode default preset (and DLAA).
++    dlssParams.Feature.InPerfQualityValue =
++        renderResolution.GetResolutionMode() == RG_RENDER_RESOLUTION_MODE_CUSTOM
++            ? NVSDK_NGX_PerfQuality_Value::NVSDK_NGX_PerfQuality_Value_Balanced
++            : ToNGXPerfQuality(renderResolution.GetResolutionMode());
+ 
+     int &dlssCreateFeatureFlags = dlssParams.InFeatureCreateFlags;
+     // motion vectors are in render resolution, not target resolution
+@@ -312,7 +359,9 @@ bool RTGL1::DLSS::ValidateDlssFeature(VkCommandBuffer cmd, const RenderResolutio
+     dlssCreateFeatureFlags |= 0; // NVSDK_NGX_DLSS_Feature_Flags_MVJittered;
+     dlssCreateFeatureFlags |= 0; // NVSDK_NGX_DLSS_Feature_Flags_IsHDR;
+     dlssCreateFeatureFlags |= 0; // NVSDK_NGX_DLSS_Feature_Flags_AutoExposure;
+-    dlssCreateFeatureFlags |= NVSDK_NGX_DLSS_Feature_Flags_DoSharpening;
++    // DoSharpening is deprecated since DLSS 2.5.1 and ignored by DLSS 3/4 DLLs;
++    // sharpening is done by RTGL1's own CAS pass instead.
++    dlssCreateFeatureFlags |= 0; // NVSDK_NGX_DLSS_Feature_Flags_DoSharpening;
+     dlssCreateFeatureFlags |= 0; // NVSDK_NGX_DLSS_Feature_Flags_DepthInverted;
+ 
+     // only one phys device
+@@ -405,7 +454,8 @@ RTGL1::FramebufferImageIndex RTGL1::DLSS::Apply(VkCommandBuffer cmd, uint32_t fr
+     evalParams.pInMotionVectors = &motionVectorsResource;
+     evalParams.InJitterOffsetX = jitterOffset.data[0] * (-1);
+     evalParams.InJitterOffsetY = jitterOffset.data[1] * (-1);
+-    evalParams.Feature.InSharpness = renderResolution.GetNvDlssSharpness();
++    // Deprecated in DLSS >= 2.5.1 (must stay 0 with DLSS 3/4 DLLs); CAS handles sharpening.
++    evalParams.Feature.InSharpness = 0.0f;
+     evalParams.InReset = resetAccumulation;
+     evalParams.InMVScaleX = static_cast<float>(sourceSize.Width);
+     evalParams.InMVScaleY = static_cast<float>(sourceSize.Height);
+diff --git a/Source/DLSS.h b/Source/DLSS.h
+index 8260e82..6bc99b9 100644
+--- a/Source/DLSS.h
++++ b/Source/DLSS.h
+@@ -71,6 +71,10 @@ private:
+ 
+     bool ValidateDlssFeature(VkCommandBuffer cmd, const RenderResolutionHelper &renderResolution);
+ 
++    // Writes the DLSS Super Resolution render-preset hints (network selection) into pParams.
++    // Must be called before the feature is (re)created.
++    void ApplyRenderPresetHints(RgRenderDlssPreset preset) const;
++
+ private:
+     VkDevice            device;
+ 
+@@ -80,10 +84,12 @@ private:
+ 
+     struct PrevDlssFeatureValues
+     {
+-        uint32_t renderWidth;
+-        uint32_t renderHeight;
+-        uint32_t upscaledWidth;
+-        uint32_t upscaledHeight;
++        uint32_t            renderWidth;
++        uint32_t            renderHeight;
++        uint32_t            upscaledWidth;
++        uint32_t            upscaledHeight;
++        RgRenderResolutionMode resolutionMode;
++        RgRenderDlssPreset  preset;
+     } prevDlssFeatureValues;
+ };
+ 
+diff --git a/Source/PhysicalDevice.cpp b/Source/PhysicalDevice.cpp
+index 9baae3d..68074d8 100644
+--- a/Source/PhysicalDevice.cpp
++++ b/Source/PhysicalDevice.cpp
+@@ -45,6 +45,12 @@ PhysicalDevice::PhysicalDevice(VkInstance instance)
+     r = vkEnumeratePhysicalDevices(instance, &physCount, physicalDevices.data());
+     VK_CHECKERROR(r);
+ 
++    // Pick the best ray-tracing capable device instead of the first one enumerated.
++    // Systems with an RT-capable integrated GPU (e.g. AMD RDNA2/3 iGPUs on Ryzen
++    // desktop CPUs) may enumerate it before the discrete card, which previously
++    // led to a white screen / RG_WRONG_ARGUMENT on start-up.
++    int bestScore = -1;
++
+     for (VkPhysicalDevice p : physicalDevices)
+     {
+         VkPhysicalDeviceRayTracingPipelineFeaturesKHR rtFeatures = {};
+@@ -55,21 +61,27 @@ PhysicalDevice::PhysicalDevice(VkInstance instance)
+         deviceFeatures2.pNext = &rtFeatures;
+         vkGetPhysicalDeviceFeatures2(p, &deviceFeatures2);
+ 
+-        if (rtFeatures.rayTracingPipeline)
++        if (!rtFeatures.rayTracingPipeline)
+         {
+-            physDevice = p;
++            continue;
++        }
+ 
+-            rtPipelineProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR;
+-            asProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR;
+-            VkPhysicalDeviceProperties2 deviceProp2 = {};
+-            deviceProp2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+-            deviceProp2.pNext = &rtPipelineProperties;
+-            rtPipelineProperties.pNext = &asProperties;
++        VkPhysicalDeviceProperties props = {};
++        vkGetPhysicalDeviceProperties(p, &props);
+ 
+-            vkGetPhysicalDeviceProperties2(physDevice, &deviceProp2);
+-            vkGetPhysicalDeviceMemoryProperties(physDevice, &memoryProperties);
++        int score = 0;
++        switch (props.deviceType)
++        {
++            case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU:   score = 3; break;
++            case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU:    score = 2; break;
++            case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU: score = 1; break;
++            default:                                     score = 0; break;
++        }
+ 
+-            break;
++        if (score > bestScore)
++        {
++            bestScore = score;
++            physDevice = p;
+         }
+     }
+ 
+@@ -77,6 +89,16 @@ PhysicalDevice::PhysicalDevice(VkInstance instance)
+     {
+         throw RgException(RG_CANT_FIND_PHYSICAL_DEVICE, "Can't find physical device with ray tracing support");
+     }
++
++    rtPipelineProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR;
++    asProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR;
++    VkPhysicalDeviceProperties2 deviceProp2 = {};
++    deviceProp2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
++    deviceProp2.pNext = &rtPipelineProperties;
++    rtPipelineProperties.pNext = &asProperties;
++
++    vkGetPhysicalDeviceProperties2(physDevice, &deviceProp2);
++    vkGetPhysicalDeviceMemoryProperties(physDevice, &memoryProperties);
+ }
+ 
+ VkPhysicalDevice PhysicalDevice::Get() const
+diff --git a/Source/RenderResolutionHelper.h b/Source/RenderResolutionHelper.h
+index 01f27ab..156add5 100644
+--- a/Source/RenderResolutionHelper.h
++++ b/Source/RenderResolutionHelper.h
+@@ -68,9 +68,20 @@ public:
+         upscaleTechnique = pParams->upscaleTechnique;
+         sharpenTechnique = pParams->sharpenTechnique;
+         resolutionMode   = pParams->resolutionMode;
++        dlssPreset       = pParams->dlssPreset;
+ 
+         // check for correct values
+         {
++            switch (dlssPreset)
++            {
++                case RG_RENDER_DLSS_PRESET_DEFAULT:
++                case RG_RENDER_DLSS_PRESET_TRANSFORMER_K:
++                case RG_RENDER_DLSS_PRESET_TRANSFORMER_L:
++                case RG_RENDER_DLSS_PRESET_TRANSFORMER_M:
++                    break;
++                default:
++                    throw RgException(RG_WRONG_ARGUMENT, "RgDrawFrameRenderResolutionParams::dlssPreset is incorrect");
++            }
+             switch (upscaleTechnique)
+             {
+                 case RG_RENDER_UPSCALE_TECHNIQUE_NEAREST:
+@@ -98,12 +109,21 @@ public:
+                 case RG_RENDER_RESOLUTION_MODE_BALANCED:
+                 case RG_RENDER_RESOLUTION_MODE_QUALITY:
+                 case RG_RENDER_RESOLUTION_MODE_ULTRA_QUALITY:
++                case RG_RENDER_RESOLUTION_MODE_DLAA:
+                     break;
+                 default:
+                     throw RgException(RG_WRONG_ARGUMENT, "RgDrawFrameRenderResolutionParams::resolutionMode is incorrect");
+             }
+         }
+ 
++        // Native-resolution AA only makes sense for the temporal upscalers.
++        if (resolutionMode == RG_RENDER_RESOLUTION_MODE_DLAA &&
++            upscaleTechnique != RG_RENDER_UPSCALE_TECHNIQUE_AMD_FSR2 &&
++            upscaleTechnique != RG_RENDER_UPSCALE_TECHNIQUE_NVIDIA_DLSS)
++        {
++            resolutionMode = RG_RENDER_RESOLUTION_MODE_CUSTOM;
++        }
++
+ 
+         if (upscaleTechnique == RG_RENDER_UPSCALE_TECHNIQUE_AMD_FSR2)
+         {
+@@ -128,6 +148,7 @@ public:
+                 case RG_RENDER_RESOLUTION_MODE_PERFORMANCE:         div = 2.0f; break;
+                 case RG_RENDER_RESOLUTION_MODE_BALANCED:            div = 1.7f; break;
+                 case RG_RENDER_RESOLUTION_MODE_QUALITY:             div = 1.5f; break;
++                case RG_RENDER_RESOLUTION_MODE_DLAA:                div = 1.0f; break;  // FSR2 "Native AA"
+                 default: assert(0); break;
+                 }
+ 
+@@ -207,7 +228,8 @@ public:
+ 
+     VkFilter                 GetBlitFilter() const { return upscaleTechnique == RG_RENDER_UPSCALE_TECHNIQUE_NEAREST ? VK_FILTER_NEAREST : VK_FILTER_LINEAR; }
+ 
+-    // RgRenderResolutionMode   GetResolutionMode()      const { return resolutionMode; }
++    RgRenderResolutionMode   GetResolutionMode()      const { return resolutionMode; }
++    RgRenderDlssPreset       GetNvDlssPreset()        const { return dlssPreset; }
+ 
+     ResolutionState GetResolutionState() const
+     {
+@@ -225,6 +247,7 @@ private:
+     RgRenderUpscaleTechnique    upscaleTechnique = RG_RENDER_UPSCALE_TECHNIQUE_LINEAR;
+     RgRenderSharpenTechnique    sharpenTechnique = RG_RENDER_SHARPEN_TECHNIQUE_NONE;
+     RgRenderResolutionMode      resolutionMode   = RG_RENDER_RESOLUTION_MODE_CUSTOM;
++    RgRenderDlssPreset          dlssPreset       = RG_RENDER_DLSS_PRESET_DEFAULT;
+ 
+     float dlssSharpness = 0.0f;
+ };
+diff --git a/Source/Shaders/CmPrepareFinal.comp b/Source/Shaders/CmPrepareFinal.comp
+index 068f49e..07936fd 100644
+--- a/Source/Shaders/CmPrepareFinal.comp
++++ b/Source/Shaders/CmPrepareFinal.comp
+@@ -37,7 +37,8 @@ layout(local_size_x = COMPUTE_COMPOSE_GROUP_SIZE_X, local_size_y = COMPUTE_COMPO
+ 
+ #define A_GLSL 1
+ #define A_GPU 1
+-#include "ffx_a.h"
++// explicit folder: CAS/ffx_a.h (2019) lacks opAAddOne*(), which ffx_lpm.h needs
++#include "LPM/ffx_a.h"
+ layout(set = DESC_SET_LPM_PARAMS, binding = BINDING_LPM_PARAMS) readonly uniform LpmParams_BT
+ {
+     AU4 g_lpmParams[24];
+@@ -50,7 +51,7 @@ layout(set = DESC_SET_LPM_PARAMS, binding = BINDING_LPM_PARAMS) readonly uniform
+     #define LPM_NO_SETUP 1
+     AU4  LpmFilterCtl(AU1 i)         { return g_lpmParams[i]; }
+ #endif
+-#include "ffx_lpm.h"
++#include "LPM/ffx_lpm.h"
+ #define LPM_RG_CONTEXT  /* used on CPU side */
+ 
+ vec3 lpmTonemap(vec3 c)
+diff --git a/Source/Shaders/GenerateShaders.py b/Source/Shaders/GenerateShaders.py
+index fc813b2..2650f9a 100644
+--- a/Source/Shaders/GenerateShaders.py
++++ b/Source/Shaders/GenerateShaders.py
+@@ -64,7 +64,8 @@ def printInPowerShell(msg, color):
+ 
+ 
+ def getDependentFoldersProcArg():
+-    return [a for p in DEPENDENCY_FOLDERS if p != "" for a in ("-I", p)]
++    # sorted: DEPENDENCY_FOLDERS is a set, and -I order decides which of several same-named headers wins
++    return [a for p in sorted(DEPENDENCY_FOLDERS) if p != "" for a in ("-I", p)]
+ 
+ 
+ def abspath(filename):
+diff --git a/Source/Shaders/ShaderCommonGLSLFunc.h b/Source/Shaders/ShaderCommonGLSLFunc.h
+index ee788dc..22d069e 100644
+--- a/Source/Shaders/ShaderCommonGLSLFunc.h
++++ b/Source/Shaders/ShaderCommonGLSLFunc.h
+@@ -69,10 +69,8 @@ layout(
+     binding = BINDING_TEXTURES)
+     uniform sampler2D globalTextures[];
+ 
+-sampler2D getTexture(uint textureIndex)
+-{
+-    return globalTextures[nonuniformEXT(textureIndex)];
+-}
++// NOTE: no 'sampler2D getTexture(uint)' helper here: returning an opaque type from a
++// function is rejected by glslang >= 14 when targeting SPIR-V. Use the sample helpers below.
+ 
+ vec4 getTextureSample(uint textureIndex, const vec2 texCoord)
+ {

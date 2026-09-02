@@ -1,0 +1,4 @@
+[submodule "RayTracedGL1"]
+	path = RayTracedGL1
+	url = https://github.com/sultim-t/RayTracedGL1.git
+	branch = quake
