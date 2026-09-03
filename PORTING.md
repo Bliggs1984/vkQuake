@@ -53,57 +53,31 @@ Upstream 1.36 features that interact with RT and need decisions during the port:
 - [x] Stage 0: vanilla 1.36.0 builds (v143), SDL 3.4.12, Steam API up, achievement fired (Brett, 31 Aug)
 - [x] steam.c multi-library fix (`e0d31a7`)
 - [x] Submodule + patches + ovrd assets on `rt-1.36`
-- [x] RT-Release/RT-Debug build configurations in vcxproj + sln (RT_RENDERER, RTGL1 lib, no PCH)
-- [~] `rt_*.c` seeded; **6/16 compile clean standalone**, 190 errors remain (was 293)
-- [ ] Stage 1 checkpoint: boots to console/menu under RTGL1
+- [x] RT-Release build configuration in vcxproj + sln (RT_RENDERER, RTGL1 lib, no PCH). No RT-Debug yet.
+- [x] **All 16 `rt_*.c` compile clean standalone** (`tools_tmp/rtcompile.ps1`), including the alias path
+- [~] Shared-file `#if RT_RENDERER` guards: 8 files / 131 errors under RT (`tools_tmp/rtsweep.ps1`):
+  pr_ext (42), gl_model (40), gl_screen (27), menu (15), view (3), gl_fog (2), cl_demo (1), host_cmd (1)
+- [ ] msbuild RT-Release link (RTGL1.lib already built from the same submodule commit) -> boot = Stage 1 checkpoint
 - [ ] Stage 2 world, Stage 3 dynamic, Stage 4 ship, Stage 5 MD5 (optional)
 
-### Standalone compile status (RT defines, `tools_tmp/rtcompile.ps1`)
+### Alias path (done, 2026-09-04)
 
-Clean: rt_gl_heap, rt_gl_rmain, rt_gl_vidsdl, rt_gl_warp, rt_r_sprite, rt_r_world.
-Remaining: rt_r_alias (69), rt_gl_mesh (62), rt_r_part_fte (15), rt_gl_rmisc (11),
-rt_gl_texmgr (9), rt_gl_sky (8), rt_gl_rlight (7), rt_gl_draw (5), rt_r_part (3), rt_r_brush (1).
+- `rt_gl_mesh.c`: `GL_MakeAliasModelDisplayLists (m, hdr)` is self-contained: dedups `triangles`/`stverts`
+  into `numverts_vbo`/`numindexes`, then fills `m->rtvertices` (numposes x numverts_vbo `RgVertex`, index
+  = pose*numverts_vbo + v) and `m->rtindices` (reversed winding) straight from `poseverts[]`, which is only
+  valid inside `Mod_LoadAliasModel`. 1.36 entry points provided: `GLMesh_UploadBuffers` (no-op; MD3/MD5),
+  `GLMesh_DeleteMeshBuffers (aliashdr_t*)` (finds the owning qmodel via `extradata[PV_QUAKE1]`),
+  `GLMesh_DeleteAllMeshBuffers`.
+- `rt_r_alias.c`: 1.36's `R_SetupAliasFrame` / `R_EntityPoseAt` / `R_GetEntityLerpedTransform` (entlerp_t)
+  copied in; RT draw path (`GetPoseVertices` -> `rgUploadGeometry`) unchanged. TODO(rt): `netstate.scale`
+  (3-arg `R_RotateForEntity`), `r_lerpturn` is a file-local cvar until rt_gl_rmain.c registers it,
+  1.36 spotlight/KEX dlight lighting not applied (RTGL1 lights models itself).
 
-### Error patterns identified (the remaining Stage-1 work)
+### Build/packaging
 
-1. **Changed shared prototypes** — 1.36 altered signatures the RT files call with 1.20.3 shapes
-   (e.g. `Draw_String` int→float x/y). Fix: `#if RT_RENDERER` prototype sections in draw.h/
-   render.h/screen.h restoring the fork/1.20.3 shapes (the fork didn't touch these headers because
-   it *was* 1.20.3). Clears most C2197/C2198 across several files at once.
-2. **`num_vulkan_*_allocations`** counters changed int→atomic in 1.36 (`rt_gl_rmisc.c` C2371) —
-   reconcile decl/type.
-3. **SDL3 renames** — RT seeds use `SDL_mutex`; under USE_SDL3 need `SDL_Mutex` (the `#ifndef
-   USE_SDL3` compat block in quakedef.h only covers the other direction).
-4. **`rht_*` / `rhtctx_s` / `lightcache_s`** raster-hit-test types in `r_part_fte.c` now collide
-   with 1.36 definitions — guard or rename.
-5. **Shared-file inline guards not yet applied**: gl_screen.c (27), menu.c (15), pr_ext.c (42),
-   gl_fog.c, gl_model.c, host_cmd.c, view.c, cl_main.c, cl_demo.c, cl_parse.c, gl_refrag.c — these
-   are the `#if RT_RENDERER` re-applications onto the 1.36 gameplay/UI files (PORTING table row 2).
-
-After compile-clean: link (RTGL1.lib + shaders), then boot = Stage 1 checkpoint.
-
-### Alias-model cliff (rt_r_alias.c 69, rt_gl_mesh.c 62) — the remaining Stage 1 work
-
-14/16 RT files compile clean. The last two are the alias (monster/weapon `.mdl`) path and need
-real porting, not mechanical fixes, because 1.36 redesigned two structures:
-
-- **entity lerp**: 1.20.3/fork used flat `entity_t` fields (`currentorigin`, `previousorigin`,
-  `currentpose`, `lerpflags`, `lerpstart`, `lerpfinish`, `lerptime`, `movelerpstart`, `LERP_*`).
-  1.36 replaced all of it with a nested `entlerp_t lerp` using a different model
-  (`prev_frame`, `frame_change_time`, `frame_duration`, `prev_origin`, `move_change_time`...).
-  → rt_r_alias.c's lerp math must be rewritten to consume 1.36's `R_SetupAliasFrame`/`lerpdata_t`.
-- **aliashdr mesh storage**: fork read `commands`/`posedata`/`poseverts`/`vertexes`/`indexes`/
-  `meshdesc`; 1.36 stores meshes as VBOs (`vertex_buffer`, `index_buffer`, `meshst_t`, MD5 joints).
-  → rt_gl_mesh.c must build the RgVertex/rtindices arrays from 1.36's aliashdr instead.
-
-**Two ways forward (Brett's call):**
-1. **Stub-to-boot (fast):** compile rt_r_alias/rt_gl_mesh as no-ops so the build links and BOOTS to
-   a ray-traced menu + world (no monsters/weapons drawn yet). Validates the whole RTGL1 pipeline on
-   the RTX 5080, then reintroduce alias rendering. Fastest path to something runnable.
-2. **Port alias now:** rewrite both files against 1.36 structs before first boot. No runnable build
-   until done; larger single chunk; monsters/weapons work on first boot.
-
-MD5 skeletal fidelity stays Stage 5 (optional) either way — classic `.mdl` first.
-
-`scripts/build.ps1` still targets the `modernise-2026` layout; adapt after the vcxproj configs exist
-(`-p:PlatformToolset=v143`, embedded shader project needs `glslangValidator` from the Vulkan SDK).
+- `scripts/build.ps1` now builds `RT-<Configuration>` with `-p:PlatformToolset=v143`, reads
+  `QUAKERT_VERSION` from `quakever.h` (2.0.0-dev; RT banner "QuakeRT x (vkQuake 1.36.0)"), copies only
+  THIRD_PARTY_NOTICES.txt + vkQuakeFullscreen.bat from Packaging/Windows.
+- Diagnostic scripts in `C:\Utils\AIstuff\QuakeRT\tools_tmp\`: `rtcompile.ps1` (rt_*.c, RT defines),
+  `vkcompile.ps1` (shared files, vanilla defines), `rtsweep.ps1` (shared files in the RT-Release set, RT
+  defines), `rtset.py` (RT-Release inclusion list from the vcxproj).
