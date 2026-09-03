@@ -102,8 +102,10 @@ void CL_FreeState (void)
 	// Free entity BLASes before freeing entities
 	if (cl.entities)
 	{
+#ifndef RT_RENDERER // vanilla per-entity BLAS; RTGL1 builds its own acceleration structures
 		for (i = 0; i < cl.max_edicts; i++)
 			R_FreeEntityBLAS (&cl.entities[i]);
+#endif
 	}
 	Mem_Free (cl.entities);
 	for (i = 0; i < cl.num_statics; i++)
@@ -926,13 +928,17 @@ void CL_RelinkEntities (void)
 
 		if (cl_numvisedicts < cl_maxvisedicts)
 		{
+#ifndef RT_RENDERER // vanilla per-entity BLAS; RTGL1 builds its own acceleration structures
 			R_AllocateEntityBLAS (ent);
+#endif
 			cl_visedicts[cl_numvisedicts] = ent;
 			cl_numvisedicts++;
 		}
 	}
 
+#ifndef RT_RENDERER // vanilla per-entity BLAS; RTGL1 builds its own acceleration structures
 	R_UpdateEntityDlights (); // 2021 rerelease shadow casting light entities
+#endif
 }
 
 #ifdef PSET_SCRIPT

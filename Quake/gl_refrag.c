@@ -275,7 +275,9 @@ void R_StoreEfrags (efrag_t **ppefrag)
 					continue;
 			}
 #endif
+#ifndef RT_RENDERER // vanilla per-entity BLAS; RTGL1 builds its own acceleration structures
 			R_AllocateEntityBLAS (pent);
+#endif
 			cl_visedicts[cl_numvisedicts++] = pent;
 			pent->visframe = r_framecount;
 		}

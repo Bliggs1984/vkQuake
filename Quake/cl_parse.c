@@ -583,7 +583,9 @@ static void CL_EntitiesDeltaed (void)
 		model = cl.model_precache[ent->netstate.modelindex];
 		if (model != ent->model)
 		{
+#ifndef RT_RENDERER // vanilla per-entity BLAS; RTGL1 builds its own acceleration structures
 			R_FreeEntityBLAS (ent); // Free old BLAS before model change
+#endif
 			ent->model = model;
 			InvalidateTraceLineCache ();
 
