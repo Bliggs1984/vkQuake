@@ -380,6 +380,11 @@ void GL_BuildBModelVertexBuffer (void);
 void GL_PrepareSIMDData (void);
 void GLMesh_LoadVertexBuffers (void);
 void GLMesh_DeleteVertexBuffers (void);
+void GLMesh_UploadBuffers (
+	qmodel_t *mod, aliashdr_t *hdr, unsigned short *indexes, byte *vertexes, aliasmesh_t *desc, jointpose_t *joints, unsigned short *skeleton_indexes,
+	int num_skeleton_indexes);
+void GLMesh_DeleteAllMeshBuffers (void);
+void GLMesh_DeleteMeshBuffers (aliashdr_t *mainhdr);
 
 int R_LightPoint (vec3_t p, lightcache_t *cache, vec3_t *lightcolor);
 void RT_ParseElights (void);

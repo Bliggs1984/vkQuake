@@ -54,9 +54,14 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define QUAKESPASM_VER_STRING QS_STRINGIFY (QUAKESPASM_VERSION) "." QS_STRINGIFY (QUAKESPASM_VER_PATCH) QUAKESPASM_VER_SUFFIX
 #define VKQUAKE_VER_STRING	  QS_STRINGIFY (VKQUAKE_VERSION) "." QS_STRINGIFY (VKQUAKE_VER_PATCH) VKQUAKE_VER_SUFFIX
 
+// Quake: Ray Traced release version (independent of the vkQuake base version above)
+#define QUAKERT_VERSION "2.0.0-dev"
+
 #ifdef QSS_DATE
 // combined version string like "2020-10-20-beta1"
 #define ENGINE_NAME_AND_VER "vkQuake " QS_STRINGIFY (QSS_DATE) VKQUAKE_VER_SUFFIX
+#elif defined(RT_RENDERER)
+#define ENGINE_NAME_AND_VER "QuakeRT " QUAKERT_VERSION " (vkQuake " VKQUAKE_VER_STRING ")"
 #else
 #define ENGINE_NAME_AND_VER \
 	"vkQuake"               \

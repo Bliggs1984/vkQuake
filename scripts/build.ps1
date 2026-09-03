@@ -8,10 +8,11 @@
     2. locate MSVC (vswhere) and the Vulkan SDK, fetch the NVIDIA DLSS SDK if needed
     3. cmake --preset x64-Release  ->  RayTracedGL1/Build/x64-Release/RayTracedGL1.dll
     4. compile RTGL1 shaders (GenerateShaders.py -> RayTracedGL1/Build/*.spv)
-    5. msbuild Windows/VisualStudio/vkquake.sln (Release|x64)
+    5. msbuild Windows/VisualStudio/vkquake.sln (RT-Release|x64 = vkQuake 1.36 + RT_RENDERER; vanilla Release stays untouched)
     6. assemble Dist/QuakeRT/ (exe, DLLs, nvngx_dlss.dll, ovrd/) and zip it
 
-.PARAMETER Configuration   Release (default) or Debug
+.PARAMETER Configuration   Release (default) or Debug -> builds the RT-Release / RT-Debug vkQuake configurations
+.PARAMETER PlatformToolset MSVC toolset for msbuild (default v143; the 1.36 vcxproj says v145 but v143 builds it fine)
 .PARAMETER DlssSdkPath     path to a clone of https://github.com/NVIDIA/DLSS (default: $env:DLSS_SDK_PATH, else Build/DLSS-SDK is cloned)
 .PARAMETER NoDlss          build RTGL1 without DLSS support
 .PARAMETER SkipPackage     stop after compiling
@@ -19,6 +20,7 @@
 [CmdletBinding()]
 param(
     [ValidateSet('Release', 'Debug')] [string] $Configuration = 'Release',
+    [string] $PlatformToolset = 'v143',
     [string] $DlssSdkPath = $env:DLSS_SDK_PATH,
     [string] $DlssSdkTag = 'v310.7.0',
     [switch] $NoDlss,
@@ -115,17 +117,18 @@ try {
 } finally { Pop-Location }
 
 # ---------------------------------------------------------------- 5. vkQuake
-Step "vkQuake ($Configuration|x64)"
+$vkConfig = "RT-$Configuration"
+Step "vkQuake ($vkConfig|x64, $PlatformToolset)"
 $env:RTGL1_SDK_PATH = $Rtgl1
-msbuild (Join-Path $Root 'Windows\VisualStudio\vkquake.sln') -m -v:minimal -nologo "-p:Configuration=$Configuration" '-p:Platform=x64'
+msbuild (Join-Path $Root 'Windows\VisualStudio\vkquake.sln') -m -v:minimal -nologo "-p:Configuration=$vkConfig" '-p:Platform=x64' "-p:PlatformToolset=$PlatformToolset"
 if ($LASTEXITCODE) { throw 'vkQuake build failed' }
-$outDir = Join-Path $Root "Windows\VisualStudio\Build-vkQuake\x64\$Configuration"
+$outDir = Join-Path $Root "Windows\VisualStudio\Build-vkQuake\x64\$vkConfig"
 if (-not (Test-Path (Join-Path $outDir 'vkQuake.exe'))) { throw "vkQuake.exe not found in $outDir" }
 
 if ($SkipPackage) { Write-Host "`nBuild finished: $outDir" -ForegroundColor Green; return }
 
 # ---------------------------------------------------------------- 6. package
-$version = (Select-String -Path (Join-Path $Root 'Quake\quakedef.h') -Pattern '#define\s+QUAKERT_VERSION\s+"([^"]+)"').Matches[0].Groups[1].Value
+$version = (Select-String -Path (Join-Path $Root 'Quake\quakever.h') -Pattern '#define\s+QUAKERT_VERSION\s+"([^"]+)"').Matches[0].Groups[1].Value
 $dist = Join-Path $Root 'Dist\QuakeRT'
 Step "Packaging $dist (version $version)"
 if (Test-Path $dist) { Remove-Item $dist -Recurse -Force }
@@ -137,7 +140,8 @@ if (-not $NoDlss) { Copy-Item (Join-Path $env:DLSS_SDK_PATH 'lib\Windows_x86_64\
 Copy-Item (Join-Path $Root 'Misc\ovrd\*') "$dist\ovrd" -Recurse -Force
 Copy-Item (Join-Path $Rtgl1 'Tools\BlueNoise_LDR_RGBA_128.ktx2') "$dist\ovrd"
 Copy-Item (Join-Path $Rtgl1 'Build\*.spv') "$dist\ovrd\shaders"
-Copy-Item (Join-Path $Root 'Packaging\Windows\*') $dist -Recurse -Force
+Copy-Item (Join-Path $Root 'Packaging\Windows\THIRD_PARTY_NOTICES.txt') $dist
+Copy-Item (Join-Path $Root 'Packaging\Windows\vkQuakeFullscreen.bat') $dist
 Copy-Item (Join-Path $Root 'LICENSE.txt') $dist
 
 $zip = Join-Path $Root "Dist\quake-rt-$version-win64.zip"

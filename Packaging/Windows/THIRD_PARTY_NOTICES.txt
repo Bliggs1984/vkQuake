@@ -1,0 +1,29 @@
+Quake: Ray Traced - third-party components shipped in this package
+=====================================================================
+
+vkQuake / QuakeSpasm / FitzQuake / Quake
+  GNU General Public License v2 - see LICENSE.txt
+
+RayTracedGL1 (RayTracedGL1.dll, ovrd/shaders/*.spv, ovrd/BlueNoise_LDR_RGBA_128.ktx2)
+  Copyright (c) 2020-2023 Sultim Tsyrendashiev - MIT License
+  https://github.com/sultim-t/RayTracedGL1
+
+SDL2 (SDL2.dll)
+  Copyright (C) 1997-2025 Sam Lantinga - zlib License
+  https://www.libsdl.org
+
+NVIDIA DLSS (nvngx_dlss.dll)
+  Copyright (c) NVIDIA Corporation. Distributed under the NVIDIA RTX SDKs
+  License Agreement (https://github.com/NVIDIA/DLSS/blob/main/LICENSE.txt).
+  This software contains source code provided by NVIDIA Corporation.
+  Requires a GeForce RTX GPU and a Game Ready driver that supports DLSS 4.
+
+AMD FidelityFX Super Resolution 2 / Contrast Adaptive Sharpening (inside RayTracedGL1.dll)
+  Copyright (c) 2022 Advanced Micro Devices, Inc. - MIT License
+
+Audio codecs (libFLAC, libmad, libmikmod, libmpg123, libogg, libopus, libopusfile,
+libvorbis, libvorbisfile, libxmp)
+  See the respective projects; binaries are the ones distributed with vkQuake.
+
+KTX-Software (inside RayTracedGL1.dll)
+  Copyright (c) The Khronos Group Inc. - Apache License 2.0
