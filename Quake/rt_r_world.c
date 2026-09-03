@@ -1863,7 +1863,7 @@ static void LoadCustomTeleportInfoAndPatch ()
 	{
 		vec3_t   entry_a = {0, 0, 0};
 		vec3_t   custom_output = {0, 0, 0};
-		qboolean custom_ismirror = false;
+		int      custom_ismirror = 0; // int for sscanf %d
 
 		char mapname[128] = "";
 

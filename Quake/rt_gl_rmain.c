@@ -173,7 +173,6 @@ qboolean R_CullModelForEntity (entity_t *e)
 R_RotateForEntity -- johnfitz -- modified to take origin and angles instead of pointer to entity
 ===============
 */
-#define DEG2RAD(a) ((a)*M_PI_DIV_180)
 void R_RotateForEntity (float matrix[16], vec3_t origin, vec3_t angles)
 {
 	float translation_matrix[16];
@@ -220,7 +219,6 @@ assumes side and forward are perpendicular, and normalized
 to turn away from side, use a negative angle
 ===============
 */
-#define DEG2RAD(a) ((a)*M_PI_DIV_180)
 void TurnVector (vec3_t out, const vec3_t forward, const vec3_t side, float angle)
 {
 	float scale_forward, scale_side;

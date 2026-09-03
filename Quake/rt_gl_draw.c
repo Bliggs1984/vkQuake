@@ -185,8 +185,9 @@ void Scrap_Upload (void)
 Draw_PicFromWad
 ================
 */
-qpic_t *Draw_PicFromWad2 (const char *name, unsigned int texflags)
+qpic_t *Draw_PicFromWad2 (const char *name, unsigned int texflags, int picflags)
 {
+	(void)picflags; // TODO(rt): 1.36 PICFLAG_* (wrap/mipmap/noload) not honoured by the RT pic cache yet
 	int          i;
 	cachepic_t  *pic;
 	qpic_t      *p;
@@ -266,7 +267,7 @@ qpic_t *Draw_PicFromWad2 (const char *name, unsigned int texflags)
 
 qpic_t *Draw_PicFromWad (const char *name)
 {
-	return Draw_PicFromWad2 (name, TEXPREF_ALPHA | TEXPREF_PAD | TEXPREF_NOPICMIP);
+	return Draw_PicFromWad2 (name, TEXPREF_ALPHA | TEXPREF_PAD | TEXPREF_NOPICMIP, PICFLAG_WAD);
 }
 
 qpic_t *Draw_GetCachedPic (const char *path)
@@ -287,8 +288,9 @@ qpic_t *Draw_GetCachedPic (const char *path)
 Draw_CachePic
 ================
 */
-qpic_t *Draw_TryCachePic (const char *path, unsigned int texflags)
+qpic_t *Draw_TryCachePic (const char *path, unsigned int texflags, int picflags)
 {
+	(void)picflags; // TODO(rt): see Draw_PicFromWad2
 	cachepic_t *pic;
 	int         i;
 	qpic_t     *dat;
@@ -338,7 +340,7 @@ qpic_t *Draw_TryCachePic (const char *path, unsigned int texflags)
 
 qpic_t *Draw_CachePic (const char *path)
 {
-	qpic_t *pic = Draw_TryCachePic (path, TEXPREF_ALPHA | TEXPREF_PAD | TEXPREF_NOPICMIP);
+	qpic_t *pic = Draw_TryCachePic (path, TEXPREF_ALPHA | TEXPREF_PAD | TEXPREF_NOPICMIP, PICFLAG_AUTO);
 	if (!pic)
 		Sys_Error ("Draw_CachePic: failed to load %s", path);
 	return pic;
@@ -424,7 +426,7 @@ void Draw_NewGame (void)
 	Draw_LoadPics ();
 	SCR_LoadPics ();
 	Sbar_LoadPics ();
-	PR_ReloadPics (false);
+	// 1.36 has no PR_ReloadPics; QC pics are re-cached lazily
 }
 
 /*
@@ -524,7 +526,7 @@ static void Draw_FillCharacterQuad (int x, int y, char num, RgVertex *output, in
 Draw_Character
 ================
 */
-void Draw_Character (cb_context_t *cbx, int x, int y, int num)
+void Draw_Character (cb_context_t *cbx, float x, float y, int num)
 {
 	if (y <= -8)
 		return; // totally off screen
@@ -561,7 +563,7 @@ void Draw_Character (cb_context_t *cbx, int x, int y, int num)
 Draw_String
 ================
 */
-void Draw_String (cb_context_t *cbx, int x, int y, const char *str)
+void Draw_String (cb_context_t *cbx, float x, float y, const char *str)
 {
 	int         num_verts = 0;
 	int         i;
@@ -609,7 +611,7 @@ void Draw_String (cb_context_t *cbx, int x, int y, const char *str)
 Draw_Pic -- johnfitz -- modified
 =============
 */
-void Draw_Pic (cb_context_t *cbx, int x, int y, qpic_t *pic, float alpha, qboolean alpha_blend)
+void Draw_Pic (cb_context_t *cbx, float x, float y, qpic_t *pic, float alpha, qboolean alpha_blend)
 {
 	glpic_t gl;
 
@@ -756,7 +758,7 @@ Draw_TransPicTranslate -- johnfitz -- rewritten to use texmgr to do translation
 Only used for the player color selection menu
 =============
 */
-void Draw_TransPicTranslate (cb_context_t *cbx, int x, int y, qpic_t *pic, int top, int bottom)
+void Draw_TransPicTranslate (cb_context_t *cbx, float x, float y, qpic_t *pic, int top, int bottom)
 {
 	static int oldtop = -2;
 	static int oldbottom = -2;
@@ -805,7 +807,7 @@ This repeats a 64*64 tile graphic to fill the screen around a sized down
 refresh window.
 =============
 */
-void Draw_TileClear (cb_context_t *cbx, int x, int y, int w, int h)
+void Draw_TileClear (cb_context_t *cbx, float x, float y, float w, float h)
 {
 	glpic_t gl;
 	memcpy (&gl, draw_backtile->data, sizeof (glpic_t));
@@ -876,7 +878,7 @@ Draw_Fill
 Fills a box of pixels with a single color
 =============
 */
-void Draw_Fill (cb_context_t *cbx, int x, int y, int w, int h, int c, float alpha) // johnfitz -- added alpha
+void Draw_Fill (cb_context_t *cbx, float x, float y, float w, float h, int c, float alpha) // johnfitz -- added alpha
 {
 	byte *pal = (byte *)d_8to24table; // johnfitz -- use d_8to24table instead of host_basepal
 
