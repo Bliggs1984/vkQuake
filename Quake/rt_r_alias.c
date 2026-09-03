@@ -31,7 +31,7 @@ extern cvar_t scr_fov;
 // TODO(rt): 1.36 added r_lerpturn (registered in vanilla gl_rmain.c R_Init). rt_gl_rmain.c does not
 // register it yet, so keep a file-local copy pre-set to the 1.36 default ("1") for
 // R_GetEntityLerpedTransform. Move to rt_gl_rmain.c + Cvar_RegisterVariable when cvars are re-audited.
-static cvar_t r_lerpturn = {"r_lerpturn", "1", CVAR_NONE, 1.0f};
+extern cvar_t r_lerpturn; // registered in rt_gl_rmisc.c
 
 extern cvar_t rt_model_rough, rt_model_metal, rt_enable_pvs;
 extern cvar_t rt_viewm_fovscale, rt_viewm_wide;

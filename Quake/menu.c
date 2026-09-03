@@ -1874,21 +1874,29 @@ enum
 	GRAPHICS_OPT_MENU_FILTER,
 	GRAPHICS_OPT_MAX_FPS,
 	GRAPHICS_OPT_ANTIALIASING_SAMPLES,
+#ifndef RT_RENDERER // RT: AA mode / render scale / anisotropy / dynamic shadows are vanilla-Vulkan-only (device_features, r_scale, ray_query)
 	GRAPHICS_OPT_ANTIALIASING_MODE,
 	GRAPHICS_OPT_RENDER_SCALE,
 	GRAPHICS_OPT_ANISOTROPY,
+#endif
 	GRAPHICS_OPT_UNDERWATER,
 	GRAPHICS_OPT_TRANSPARENCY,
 	GRAPHICS_OPT_MODELS,
 	GRAPHICS_OPT_MODEL_INTERPOLATION,
 	GRAPHICS_OPT_PARTICLES,
+#ifndef RT_RENDERER
 	GRAPHICS_OPT_SHADOWS,
+#endif
 	GRAPHICS_OPTIONS_ITEMS,
 };
 
 static int M_GraphicsOptions_NumItems ()
 {
+#ifdef RT_RENDERER
+	return GRAPHICS_OPTIONS_ITEMS;
+#else
 	return GRAPHICS_OPTIONS_ITEMS - (vulkan_globals.ray_query ? 0 : 1);
+#endif
 }
 
 static int graphics_options_cursor = 0;
@@ -1937,6 +1945,7 @@ static void M_GraphicsOptions_ChooseNextAASamples (int dir)
 	Cvar_SetValueQuick (&vid_fsaa, (float)value);
 }
 
+#ifndef RT_RENDERER
 static void M_GraphicsOptions_ChooseNextRenderScale (int dir)
 {
 	int value = r_scale.value;
@@ -1968,6 +1977,7 @@ static void M_GraphicsOptions_ChooseNextRenderScale (int dir)
 
 	Cvar_SetValueQuick (&r_scale, (float)value);
 }
+#endif
 
 static void M_GraphicsOptions_ChooseNextParticles (int dir)
 {
@@ -2050,6 +2060,7 @@ static void M_GraphicsOptions_AdjustSliders (int dir, qboolean mouse)
 		M_GraphicsOptions_ChooseNextAASamples (dir);
 		Cbuf_AddText ("vid_restart\n");
 		break;
+#ifndef RT_RENDERER
 	case GRAPHICS_OPT_ANTIALIASING_MODE:
 		if (vulkan_globals.device_features.sampleRateShading)
 			Cvar_SetValueQuick (&vid_fsaamode, (float)(((int)vid_fsaamode.value + 2 + dir) % 2));
@@ -2060,6 +2071,7 @@ static void M_GraphicsOptions_AdjustSliders (int dir, qboolean mouse)
 	case GRAPHICS_OPT_ANISOTROPY:
 		Cvar_SetValueQuick (&vid_anisotropic, (float)(((int)vid_anisotropic.value + 2 + dir) % 2));
 		break;
+#endif
 	case GRAPHICS_OPT_UNDERWATER:
 		Cvar_SetValueQuick (&r_waterwarp, (float)(((int)r_waterwarp.value + 3 + dir) % 3));
 		break;
@@ -2077,10 +2089,12 @@ static void M_GraphicsOptions_AdjustSliders (int dir, qboolean mouse)
 	case GRAPHICS_OPT_PARTICLES:
 		M_GraphicsOptions_ChooseNextParticles (dir);
 		break;
+#ifndef RT_RENDERER
 	case GRAPHICS_OPT_SHADOWS:
 		if (vulkan_globals.ray_query)
 			Cvar_SetValueQuick (&r_rtshadows, (float)(((int)r_rtshadows.value + 4 + dir) % 4));
 		break;
+#endif
 	}
 }
 
@@ -2187,6 +2201,7 @@ static void M_GraphicsOptions_Draw (cb_context_t *cbx)
 		cbx, MENU_VALUE_X, top + CHARACTER_SIZE * GRAPHICS_OPT_ANTIALIASING_SAMPLES,
 		((int)vid_fsaa.value >= 2) ? va ("%ix", CLAMP (2, (int)vid_fsaa.value, 16)) : "off");
 
+#ifndef RT_RENDERER
 	M_Print (cbx, MENU_LABEL_X, top + CHARACTER_SIZE * GRAPHICS_OPT_ANTIALIASING_MODE, "AA mode");
 	M_Print (
 		cbx, MENU_VALUE_X, top + CHARACTER_SIZE * GRAPHICS_OPT_ANTIALIASING_MODE,
@@ -2199,6 +2214,7 @@ static void M_GraphicsOptions_Draw (cb_context_t *cbx)
 	M_Print (
 		cbx, MENU_VALUE_X, top + CHARACTER_SIZE * GRAPHICS_OPT_ANISOTROPY,
 		(vid_anisotropic.value == 0) ? "off" : va ("on (%gx)", vulkan_globals.device_properties.limits.maxSamplerAnisotropy));
+#endif
 
 	M_Print (cbx, MENU_LABEL_X, top + CHARACTER_SIZE * GRAPHICS_OPT_UNDERWATER, "Underwater FX");
 	M_Print (
@@ -2222,12 +2238,14 @@ static void M_GraphicsOptions_Draw (cb_context_t *cbx)
 		cbx, MENU_VALUE_X, top + CHARACTER_SIZE * GRAPHICS_OPT_PARTICLES,
 		((int)r_particles.value == 0) ? "off" : (((int)r_particles.value == 2) ? "Classic" : "glQuake"));
 
+#ifndef RT_RENDERER
 	if (vulkan_globals.ray_query)
 	{
 		M_Print (cbx, MENU_LABEL_X, top + CHARACTER_SIZE * GRAPHICS_OPT_SHADOWS, "Dynamic Shadows");
 		const char *shadow_modes[] = {"off", "low", "medium", "high"};
 		M_Print (cbx, MENU_VALUE_X, top + CHARACTER_SIZE * GRAPHICS_OPT_SHADOWS, shadow_modes[(int)r_rtshadows.value]);
 	}
+#endif
 
 	// cursor
 	M_Mouse_UpdateListCursor (&graphics_options_cursor, MENU_CURSOR_X, 320, top, CHARACTER_SIZE, M_GraphicsOptions_NumItems (), 0);

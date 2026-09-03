@@ -34,6 +34,14 @@ static void		 Mod_LoadMD3Model (qmodel_t *mod, const void *buffer);
 static qmodel_t *Mod_LoadModel (qmodel_t *mod, qboolean crash);
 static void		 Mod_FreeModelMemory (qmodel_t *mod);
 
+#ifdef RT_RENDERER
+// RT renderer: material defaults for textures loaded here (defined in rt_gl_vidsdl.c / rt_gl_texmgr.c).
+extern cvar_t rt_brush_rough, rt_brush_metal;
+extern cvar_t rt_model_rough, rt_model_metal;
+void		  TexMgr_RT_SpecialStart (float default_rough, float default_metallic);
+void		  TexMgr_RT_SpecialEnd (void);
+#endif
+
 cvar_t external_ents = {"external_ents", "1", CVAR_ARCHIVE_GAME};
 cvar_t external_vis = {"external_vis", "1", CVAR_ARCHIVE_GAME};
 
@@ -120,7 +128,9 @@ static void Mod_EnhancedModels_f (cvar_t *var)
 	int		  i;
 	qmodel_t *mod;
 
+#ifndef RT_RENDERER // vanilla Vulkan BLAS; RTGL1 owns acceleration structures itself
 	R_FreeAllEntityBLASes ();
+#endif
 
 	for (i = 0, mod = mod_known; i < mod_numknown; i++, mod++)
 	{
@@ -485,7 +495,9 @@ void Mod_ClearAll (void)
 {
 	int		  i;
 	qmodel_t *mod;
+#ifndef RT_RENDERER // vanilla Vulkan BLAS; RTGL1 owns acceleration structures itself
 	GL_DeleteBModelAccelerationStructures ();
+#endif
 
 	for (i = 0, mod = mod_known; i < mod_numknown; i++, mod++)
 	{
@@ -511,7 +523,9 @@ void Mod_ResetAll (void)
 
 	// ericw -- free alias model VBOs
 	GLMesh_DeleteAllMeshBuffers ();
+#ifndef RT_RENDERER // vanilla Vulkan BLAS; RTGL1 owns acceleration structures itself
 	GL_DeleteBModelAccelerationStructures ();
+#endif
 
 	for (i = 0, mod = mod_known; i < mod_numknown; i++, mod++)
 	{
@@ -614,7 +628,14 @@ static qmodel_t *Mod_LoadModel (qmodel_t *mod, qboolean crash)
 	}
 
 	const bool mod_is_mdl = (strcmp (COM_FileGetExtension (mod->name), "mdl") == 0);
+#ifdef RT_RENDERER
+	// TODO(rt): MD3/MD5 replacement models are Stage 5; RT only meshes the classic .mdl (rt_gl_mesh.c),
+	// so never pick up an enhanced replacement and always load the .mdl fallback.
+	const bool load_enhanced_model = false;
+	(void)mod_is_mdl;
+#else
 	const bool load_enhanced_model = mod_is_mdl && r_enhancedmodels.value;
+#endif
 
 	// 2. Find MDL "enhanced" complementary models, if any:
 	if (load_enhanced_model && r_allow_replacement_md3models.value)
@@ -989,6 +1010,9 @@ static void Mod_LoadTextureTask (int i, qmodel_t **ppmod)
 	char  filename[MAX_OSPATH], mapname[MAX_OSPATH];
 	byte *data = NULL;
 	bool  fbright;
+#ifdef RT_RENDERER
+	char  rtname[MAX_OSPATH]; // RTGL1 material name
+#endif
 
 	// Only filter out external textures for static models, not the level:
 	const unsigned int effective_min_path_id = (mod->is_worldmodel ? 0 : mod->path_id);
@@ -1017,11 +1041,19 @@ static void Mod_LoadTextureTask (int i, qmodel_t **ppmod)
 			data = Image_LoadImage (filename, &fwidth, &fheight, &fmt, effective_min_path_id);
 		}
 
+#ifdef RT_RENDERER
+		q_snprintf (rtname, sizeof (rtname), "maps/#%s", tx->name + 1);
+#endif
+
 		// now load whatever we found
 		if (data) // load external image
 		{
 			q_strlcpy (texturename, filename, sizeof (texturename));
+#ifdef RT_RENDERER
+			tx->gltexture = TexMgr_LoadImage (rtname, mod, texturename, fwidth, fheight, fmt, data, filename, 0, TEXPREF_NONE);
+#else
 			tx->gltexture = TexMgr_LoadImage (mod, texturename, fwidth, fheight, fmt, data, filename, 0, TEXPREF_NONE);
+#endif
 		}
 		else // use the texture from the bsp file
 		{
@@ -1029,12 +1061,23 @@ static void Mod_LoadTextureTask (int i, qmodel_t **ppmod)
 			fmt = SRC_INDEXED;
 			if (tx->palette)
 				fmt = SRC_INDEXED_PALETTE;
+#ifdef RT_RENDERER
+			tx->gltexture =
+				TexMgr_LoadImage (rtname, mod, texturename, tx->width, tx->height, fmt, (byte *)(tx + 1), tx->source_file, tx->source_offset, TEXPREF_NONE);
+#else
 			tx->gltexture = TexMgr_LoadImage (mod, texturename, tx->width, tx->height, fmt, (byte *)(tx + 1), tx->source_file, tx->source_offset, TEXPREF_NONE);
+#endif
 		}
 
 		// now create the warpimage, using dummy data from the hunk to create the initial image
 		q_snprintf (texturename, sizeof (texturename), "%s_warp", texturename);
+#ifdef RT_RENDERER
+		q_snprintf (rtname, sizeof (rtname), "%s_warp", rtname);
+		tx->warpimage =
+			TexMgr_LoadImage (rtname, mod, texturename, WARPIMAGESIZE, WARPIMAGESIZE, SRC_RGBA, NULL, "", 0, TEXPREF_NOPICMIP | TEXPREF_WARPIMAGE);
+#else
 		tx->warpimage = TexMgr_LoadImage (mod, texturename, WARPIMAGESIZE, WARPIMAGESIZE, SRC_RGBA, NULL, "", 0, TEXPREF_NOPICMIP | TEXPREF_WARPIMAGE);
+#endif
 		Atomic_StoreUInt32 (&tx->update_warp, true);
 	}
 	else // regular texture
@@ -1058,12 +1101,21 @@ static void Mod_LoadTextureTask (int i, qmodel_t **ppmod)
 			data = Image_LoadImage (filename, &fwidth, &fheight, &fmt, effective_min_path_id);
 		}
 
+#ifdef RT_RENDERER
+		q_snprintf (rtname, sizeof (rtname), "maps/%s", tx->name);
+		TexMgr_RT_SpecialStart (CVAR_TO_FLOAT (rt_brush_rough), CVAR_TO_FLOAT (rt_brush_metal));
+#endif
+
 		// now load whatever we found
 		if (data) // load external image
 		{
 			char filename2[MAX_OSPATH];
 
+#ifdef RT_RENDERER
+			tx->gltexture = TexMgr_LoadImage (rtname, mod, filename, fwidth, fheight, fmt, data, filename, 0, TEXPREF_MIPMAP | extraflags);
+#else
 			tx->gltexture = TexMgr_LoadImage (mod, filename, fwidth, fheight, fmt, data, filename, 0, TEXPREF_MIPMAP | extraflags);
+#endif
 			Mem_Free (data);
 
 			// now try to load glow/luma image from the same place
@@ -1076,7 +1128,12 @@ static void Mod_LoadTextureTask (int i, qmodel_t **ppmod)
 			}
 
 			if (data)
+#ifdef RT_RENDERER
+				tx->fullbright = TexMgr_LoadImage (
+					NULL, mod, filename2, fwidth, fheight, fmt, data, filename2, 0, TEXPREF_RT_IS_EMISSIVE | TEXPREF_MIPMAP | extraflags);
+#else
 				tx->fullbright = TexMgr_LoadImage (mod, filename2, fwidth, fheight, fmt, data, filename2, 0, TEXPREF_MIPMAP | extraflags);
+#endif
 		}
 		else // use the texture from the bsp file
 		{
@@ -1093,6 +1150,15 @@ static void Mod_LoadTextureTask (int i, qmodel_t **ppmod)
 			}
 			if (fbright)
 			{
+#ifdef RT_RENDERER
+				tx->gltexture = TexMgr_LoadImage (
+					rtname, mod, texturename, tx->width, tx->height, fmt, (byte *)(tx + 1), tx->source_file, tx->source_offset,
+					TEXPREF_MIPMAP | TEXPREF_NOBRIGHT | extraflags);
+				q_snprintf (texturename, sizeof (texturename), "%s:%s_glow", mod->name, tx->name);
+				tx->fullbright = TexMgr_LoadImage (
+					NULL, mod, texturename, tx->width, tx->height, fmt, (byte *)(tx + 1), tx->source_file, tx->source_offset,
+					TEXPREF_RT_IS_EMISSIVE | TEXPREF_MIPMAP | TEXPREF_FULLBRIGHT | extraflags);
+#else
 				tx->gltexture = TexMgr_LoadImage (
 					mod, texturename, tx->width, tx->height, fmt, (byte *)(tx + 1), tx->source_file, tx->source_offset,
 					TEXPREF_MIPMAP | TEXPREF_NOBRIGHT | extraflags);
@@ -1100,13 +1166,23 @@ static void Mod_LoadTextureTask (int i, qmodel_t **ppmod)
 				tx->fullbright = TexMgr_LoadImage (
 					mod, texturename, tx->width, tx->height, fmt, (byte *)(tx + 1), tx->source_file, tx->source_offset,
 					TEXPREF_MIPMAP | TEXPREF_FULLBRIGHT | extraflags);
+#endif
 			}
 			else
 			{
+#ifdef RT_RENDERER
+				tx->gltexture = TexMgr_LoadImage (
+					rtname, mod, texturename, tx->width, tx->height, fmt, (byte *)(tx + 1), tx->source_file, tx->source_offset,
+					TEXPREF_MIPMAP | extraflags);
+#else
 				tx->gltexture = TexMgr_LoadImage (
 					mod, texturename, tx->width, tx->height, fmt, (byte *)(tx + 1), tx->source_file, tx->source_offset, TEXPREF_MIPMAP | extraflags);
+#endif
 			}
 		}
+#ifdef RT_RENDERER
+		TexMgr_RT_SpecialEnd ();
+#endif
 	}
 	Mem_Free (data);
 }
@@ -2337,11 +2413,13 @@ static void Mod_CheckWaterVis (qmodel_t *mod)
 	int			contenttype;
 	unsigned	hascontents = 0;
 
+#ifndef RT_RENDERER // r_novis is a vanilla-renderer cvar (gl_rmain.c); RT has no equivalent
 	if (r_novis.value)
 	{ // all can be
 		mod->contentstransparent = (SURF_DRAWWATER | SURF_DRAWTELE | SURF_DRAWSLIME | SURF_DRAWLAVA);
 		return;
 	}
+#endif
 
 	// pvs is 1-based. leaf 0 sees all (the solid leaf).
 	// leaf 0 has no pvs, and does not appear in other leafs either, so watch out for the biases.
@@ -3610,8 +3688,13 @@ static gltexture_t *Mod_LoadFullbrightTexture (qmodel_t *mod, aliashdr_t *surf, 
 			rgba_component[3] = 255;
 		}
 
+#ifdef RT_RENDERER
+		gltexture_t *loaded_texture = TexMgr_LoadImage (
+			NULL, mod, texname_copy, fb_width, fb_height, SRC_RGBA, (byte *)fb_data, texname_copy, 0, TEXPREF_RT_IS_EMISSIVE | TEXPREF_ALPHA | TEXPREF_MIPMAP);
+#else
 		gltexture_t *loaded_texture =
 			TexMgr_LoadImage (mod, texname_copy, fb_width, fb_height, SRC_RGBA, (byte *)fb_data, texname_copy, 0, TEXPREF_ALPHA | TEXPREF_MIPMAP);
+#endif
 		Mem_Free (fb_data);
 
 		return loaded_texture;
@@ -3637,6 +3720,10 @@ static void Mod_LoadSkinTask (int i, load_skin_task_args_t *args)
 {
 	int			 j, k, size, groupskins;
 	char		 name[MAX_QPATH];
+#ifdef RT_RENDERER
+	char		 rtname[MAX_QPATH]; // RTGL1 material name
+	char		 namenoext[MAX_QPATH];
+#endif
 	byte		*skin, *texels;
 	byte		*pskintype = args->ppskintypes[i];
 	byte		*pinskingroup;
@@ -3653,6 +3740,10 @@ static void Mod_LoadSkinTask (int i, load_skin_task_args_t *args)
 	if (mod->flags & MF_HOLEY)
 		texflags |= TEXPREF_ALPHA;
 
+#ifdef RT_RENDERER
+	COM_StripExtension (mod->name, namenoext, sizeof (namenoext));
+#endif
+
 	if (ReadLongUnaligned (pskintype + offsetof (daliasskintype_t, type)) == ALIAS_SKIN_SINGLE)
 	{
 		skin = pskintype + sizeof (daliasskintype_t);
@@ -3665,6 +3756,9 @@ static void Mod_LoadSkinTask (int i, load_skin_task_args_t *args)
 
 		pheader->gltextures[i][0] = NULL;
 		pheader->fbtextures[i][0] = NULL;
+#ifdef RT_RENDERER
+		q_snprintf (rtname, sizeof (rtname), "%s/%i", namenoext, i);
+#endif
 
 		// try to load external textures first, if enabled.
 		if (mdl_external_textures.value > 0.0f)
@@ -3688,8 +3782,13 @@ static void Mod_LoadSkinTask (int i, load_skin_task_args_t *args)
 			{
 				if (fmt == SRC_RGBA)
 				{
+#ifdef RT_RENDERER
+					pheader->gltextures[i][0] = TexMgr_LoadImage (
+						rtname, mod, va ("%s_%i", mod->name, i), fwidth, fheight, fmt, data, va ("%s_%i", mod->name, i), 0, TEXPREF_ALPHA | TEXPREF_MIPMAP);
+#else
 					pheader->gltextures[i][0] = TexMgr_LoadImage (
 						mod, va ("%s_%i", mod->name, i), fwidth, fheight, fmt, data, va ("%s_%i", mod->name, i), 0, TEXPREF_ALPHA | TEXPREF_MIPMAP);
+#endif
 
 #define TRY_LOAD_FULLBRIGHTS(tex_name)                                                      \
 	do                                                                                      \
@@ -3724,17 +3823,34 @@ static void Mod_LoadSkinTask (int i, load_skin_task_args_t *args)
 			offset = (src_offset_t)(skin) - (src_offset_t)mod_base;
 			if (Mod_CheckFullbrights (skin, size))
 			{
+#ifdef RT_RENDERER
+				TexMgr_RT_SpecialStart (CVAR_TO_FLOAT (rt_model_rough), CVAR_TO_FLOAT (rt_model_metal));
+				pheader->gltextures[i][0] = TexMgr_LoadImage (
+					rtname, mod, name, pheader->skinwidth, pheader->skinheight, SRC_INDEXED, skin, mod->name, offset,
+					texflags | TEXPREF_MIPMAP | TEXPREF_NOBRIGHT);
+				q_snprintf (fbr_mask_name, sizeof (fbr_mask_name), "%s:frame%i_glow", mod->name, i);
+				pheader->fbtextures[i][0] = TexMgr_LoadImage (
+					NULL, mod, fbr_mask_name, pheader->skinwidth, pheader->skinheight, SRC_INDEXED, skin, mod->name, offset,
+					TEXPREF_RT_IS_EMISSIVE | texflags | TEXPREF_MIPMAP | TEXPREF_FULLBRIGHT);
+				TexMgr_RT_SpecialEnd ();
+#else
 				pheader->gltextures[i][0] = TexMgr_LoadImage (
 					mod, name, pheader->skinwidth, pheader->skinheight, SRC_INDEXED, skin, mod->name, offset, texflags | TEXPREF_MIPMAP | TEXPREF_NOBRIGHT);
 				q_snprintf (fbr_mask_name, sizeof (fbr_mask_name), "%s:frame%i_glow", mod->name, i);
 				pheader->fbtextures[i][0] = TexMgr_LoadImage (
 					mod, fbr_mask_name, pheader->skinwidth, pheader->skinheight, SRC_INDEXED, skin, mod->name, offset,
 					texflags | TEXPREF_MIPMAP | TEXPREF_FULLBRIGHT);
+#endif
 			}
 			else
 			{
+#ifdef RT_RENDERER
+				pheader->gltextures[i][0] = TexMgr_LoadImage (
+					rtname, mod, name, pheader->skinwidth, pheader->skinheight, SRC_INDEXED, skin, mod->name, offset, texflags | TEXPREF_MIPMAP);
+#else
 				pheader->gltextures[i][0] =
 					TexMgr_LoadImage (mod, name, pheader->skinwidth, pheader->skinheight, SRC_INDEXED, skin, mod->name, offset, texflags | TEXPREF_MIPMAP);
+#endif
 				pheader->fbtextures[i][0] = NULL;
 			}
 		}
@@ -3764,19 +3880,39 @@ static void Mod_LoadSkinTask (int i, load_skin_task_args_t *args)
 			// johnfitz -- rewritten
 			q_snprintf (name, sizeof (name), "%s:frame%i_%i", mod->name, i, j);
 			offset = (src_offset_t)(skin) - (src_offset_t)mod_base; // johnfitz
+#ifdef RT_RENDERER
+			q_snprintf (rtname, sizeof (rtname), "%s/%i_%i", namenoext, i, j);
+#endif
 			if (Mod_CheckFullbrights (skin, size))
 			{
+#ifdef RT_RENDERER
+				TexMgr_RT_SpecialStart (CVAR_TO_FLOAT (rt_model_rough), CVAR_TO_FLOAT (rt_model_metal));
+				pheader->gltextures[i][j & 3] = TexMgr_LoadImage (
+					rtname, mod, name, pheader->skinwidth, pheader->skinheight, SRC_INDEXED, skin, mod->name, offset,
+					texflags | TEXPREF_MIPMAP | TEXPREF_NOBRIGHT);
+				q_snprintf (fbr_mask_name, sizeof (fbr_mask_name), "%s:frame%i_%i_glow", mod->name, i, j);
+				pheader->fbtextures[i][j & 3] = TexMgr_LoadImage (
+					NULL, mod, fbr_mask_name, pheader->skinwidth, pheader->skinheight, SRC_INDEXED, skin, mod->name, offset,
+					TEXPREF_RT_IS_EMISSIVE | texflags | TEXPREF_MIPMAP | TEXPREF_FULLBRIGHT);
+				TexMgr_RT_SpecialEnd ();
+#else
 				pheader->gltextures[i][j & 3] = TexMgr_LoadImage (
 					mod, name, pheader->skinwidth, pheader->skinheight, SRC_INDEXED, skin, mod->name, offset, texflags | TEXPREF_MIPMAP | TEXPREF_NOBRIGHT);
 				q_snprintf (fbr_mask_name, sizeof (fbr_mask_name), "%s:frame%i_%i_glow", mod->name, i, j);
 				pheader->fbtextures[i][j & 3] = TexMgr_LoadImage (
 					mod, fbr_mask_name, pheader->skinwidth, pheader->skinheight, SRC_INDEXED, skin, mod->name, offset,
 					texflags | TEXPREF_MIPMAP | TEXPREF_FULLBRIGHT);
+#endif
 			}
 			else
 			{
+#ifdef RT_RENDERER
+				pheader->gltextures[i][j & 3] = TexMgr_LoadImage (
+					rtname, mod, name, pheader->skinwidth, pheader->skinheight, SRC_INDEXED, skin, mod->name, offset, texflags | TEXPREF_MIPMAP);
+#else
 				pheader->gltextures[i][j & 3] =
 					TexMgr_LoadImage (mod, name, pheader->skinwidth, pheader->skinheight, SRC_INDEXED, skin, mod->name, offset, texflags | TEXPREF_MIPMAP);
+#endif
 				pheader->fbtextures[i][j & 3] = NULL;
 			}
 			// johnfitz
@@ -4242,9 +4378,18 @@ static void *Mod_LoadSpriteFrame (qmodel_t *mod, byte *mod_base, void *pin, mspr
 
 	q_snprintf (name, sizeof (name), "%s:frame%i", mod->name, framenum);
 	offset = (src_offset_t)(pinframe + 1) - (src_offset_t)mod_base; // johnfitz
+#ifdef RT_RENDERER
+	{
+		char rtname[64];
+		q_snprintf (rtname, sizeof (rtname), "%s/%i", mod->name, framenum);
+		pspriteframe->gltexture = TexMgr_LoadImage (
+			rtname, mod, name, width, height, SRC_INDEXED, (byte *)(pinframe + 1), mod->name, offset, TEXPREF_PAD | TEXPREF_ALPHA | TEXPREF_NOPICMIP);
+	}
+#else
 	pspriteframe->gltexture = TexMgr_LoadImage (
 		mod, name, width, height, SRC_INDEXED, (byte *)(pinframe + 1), mod->name, offset,
 		TEXPREF_PAD | TEXPREF_ALPHA | TEXPREF_NOPICMIP); // johnfitz -- TexMgr
+#endif
 
 	return (void *)((byte *)pinframe + sizeof (dspriteframe_t) + size);
 }
@@ -5215,8 +5360,14 @@ static void Mod_LoadMDXSkinTask (int i, load_skin_MDX_task_args_t *args)
 
 	if (data) // load external image
 	{
+#ifdef RT_RENDERER
+		// TODO(rt): MD3/MD5 are Stage 5; material name is just the texture path for now.
+		surf->gltextures[skin_index][f] =
+			TexMgr_LoadImage (texname, mod, texname, fwidth, fheight, fmt, data, texname, 0, TEXPREF_ALPHA | TEXPREF_NOBRIGHT | TEXPREF_MIPMAP);
+#else
 		surf->gltextures[skin_index][f] =
 			TexMgr_LoadImage (mod, texname, fwidth, fheight, fmt, data, texname, 0, TEXPREF_ALPHA | TEXPREF_NOBRIGHT | TEXPREF_MIPMAP);
+#endif
 
 		// no fullbrights by default.
 		assert (surf->fbtextures[skin_index][f] == NULL);
@@ -5242,9 +5393,15 @@ static void Mod_LoadMDXSkinTask (int i, load_skin_MDX_task_args_t *args)
 			{
 				if (((byte *)data)[j] > 223)
 				{
+#ifdef RT_RENDERER
+					surf->fbtextures[skin_index][f] = TexMgr_LoadImage (
+						NULL, mod, va ("%s_luma", basic_texname), fwidth, fheight, SRC_INDEXED, data, texname, 0,
+						TEXPREF_RT_IS_EMISSIVE | TEXPREF_ALPHA | TEXPREF_MIPMAP | TEXPREF_FULLBRIGHT);
+#else
 					surf->fbtextures[skin_index][f] = TexMgr_LoadImage (
 						mod, va ("%s_luma", basic_texname), fwidth, fheight, SRC_INDEXED, data, texname, 0,
 						TEXPREF_ALPHA | TEXPREF_MIPMAP | TEXPREF_FULLBRIGHT);
+#endif
 					break;
 				}
 			}

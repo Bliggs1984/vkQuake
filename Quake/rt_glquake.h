@@ -347,6 +347,10 @@ void  Fog_DisableGFog (cb_context_t *cbx);
 void  Fog_SetupFrame (cb_context_t *cbx);
 void  Fog_NewMap (void);
 void  Fog_Init (void);
+// RT: 1.36 fog API (defined in the shared gl_fog.c), called from cl_demo.c / host_cmd.c
+void		Fog_Update (float density, float red, float green, float blue, float time);
+void		Fog_ResetFade (void);
+const char *Fog_GetFogCommand (qboolean always);
 
 void R_NewGame (void);
 
@@ -424,6 +428,9 @@ void Sky_NewMap (void);
 void Sky_LoadTexture (qmodel_t *mod, texture_t *mt, int tex_index);
 void Sky_LoadTextureQ64 (qmodel_t *mod, texture_t *mt, int tex_index);
 void Sky_LoadSkyBox (const char *name);
+// RT: 1.36 sky API called from cl_demo.c / host_cmd.c -- rt_gl_sky.c must define these to link
+const char *Sky_GetSkyCommand (qboolean always);
+void		Sky_SetSkyfog (float value);
 
 void R_ClearTextureChains (qmodel_t *mod, texchain_t chain);
 void R_ChainSurface (msurface_t *surf, texchain_t chain);

@@ -217,7 +217,11 @@ void		 CL_Seek_f (void)
 		Sky_NewMap ();
 		R_ClearParticles ();
 #ifdef PSET_SCRIPT
+#ifdef RT_RENDERER
+		PScript_ClearParticles (); // RT: rt_r_part_fte.c keeps the 1.20.3 no-argument shape
+#else
 		PScript_ClearParticles (false);
+#endif
 #endif
 		SCR_CenterPrintClear ();
 		if (cl.intermission)

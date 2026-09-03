@@ -318,6 +318,32 @@ void        Sky_LoadSkyBox (const char *name)
 
 /*
 =================
+Sky_GetSkyCommand / Sky_SetSkyfog -- 1.36 demo/savegame hooks (see cl_demo.c, host_cmd.c)
+=================
+*/
+const char *Sky_GetSkyCommand (qboolean always)
+{
+	qboolean need_sky = always || skybox_name[0];
+	qboolean need_skyfog = always; // no safe way to record skyfog in demos; r_skyfog is user pref
+
+	if (need_sky || need_skyfog)
+	{
+		char sky[128];
+		char fog[128];
+		q_strlcpy (sky, va ("sky \"%s\"", skybox_name), sizeof (sky));
+		q_strlcpy (fog, va ("skyfog %g", skyfog), sizeof (fog));
+		return va ("\n%s%s%s\n", need_sky ? sky : "", need_sky && need_skyfog ? "\n" : "", need_skyfog ? fog : "");
+	}
+	return "";
+}
+
+void Sky_SetSkyfog (float value)
+{
+	skyfog = value;
+}
+
+/*
+=================
 Sky_ClearAll
 
 Called on map unload/game change to avoid keeping pointers to freed data

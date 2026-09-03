@@ -89,6 +89,9 @@ extern cvar_t   r_particles, host_maxfps, r_gpulightmapupdate;
 
 // johnfitz -- new cvars
 static cvar_t                   vid_fullscreen = {"vid_fullscreen", "0", CVAR_ARCHIVE}; // QuakeSpasm, was "1"
+// 1.36 cvars referenced by menu.c; vanilla defines them in gl_vidsdl.c. TODO(rt): no effect under RTGL1
+cvar_t vid_fsaa = {"vid_fsaa", "0", CVAR_ARCHIVE};
+cvar_t vid_palettize = {"vid_palettize", "0", CVAR_ARCHIVE};
 static cvar_t                   vid_width = {"vid_width", "-1", CVAR_ARCHIVE};         // RT: set to "-1", so we have 
 static cvar_t                   vid_height = {"vid_height", "-1", CVAR_ARCHIVE};       //     desktop resolution at the first time
 static cvar_t                   vid_refreshrate = {"vid_refreshrate", "60", CVAR_ARCHIVE};
@@ -1458,6 +1461,8 @@ void VID_Init (void)
 #define num_readvars (sizeof (read_vars) / sizeof (read_vars[0]))
 
 	Cvar_RegisterVariable (&vid_fullscreen);  // johnfitz
+	Cvar_RegisterVariable (&vid_fsaa);
+	Cvar_RegisterVariable (&vid_palettize);
 	Cvar_RegisterVariable (&vid_width);       // johnfitz
 	Cvar_RegisterVariable (&vid_height);      // johnfitz
 	Cvar_RegisterVariable (&vid_refreshrate); // johnfitz

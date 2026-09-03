@@ -76,6 +76,9 @@ console is:
 */
 
 int glwidth, glheight;
+#ifdef RT_RENDERER
+int glx, gly; // RT: rt_glquake.h declares these (GL_BeginRendering fills them); vanilla 1.36 dropped them
+#endif
 
 float scr_con_current;
 float scr_conlines; // lines of console to display
@@ -664,6 +667,7 @@ static void SCR_DrawFPS (cb_context_t *cbx)
 SCR_DrawSpeeds -- scr_speeds overlay in the top right corner
 ==============
 */
+#ifndef RT_RENDERER // RT: scr_speeds / rs_display_* live in the vanilla gl_rmain.c; RTGL1 has no equivalent stats
 static void SCR_DrawSpeeds (cb_context_t *cbx)
 {
 	if (!scr_speeds.value || (rs_display_numlines == 0) || (scr_viewsize.value >= 130))
@@ -677,6 +681,7 @@ static void SCR_DrawSpeeds (cb_context_t *cbx)
 		y += CHARACTER_SIZE;
 	}
 }
+#endif
 
 /*
 ==============
@@ -865,6 +870,7 @@ static void SCR_DrawEdictInfo (cb_context_t *cbx)
 	float			x, y;
 	int				numlines;
 
+#ifndef RT_RENDERER // RT: r_pointfile (pointfile leak-line viewer) is vanilla gl_rmain.c only
 	if (VEC_SIZE (bbox_linked) == 0 && VEC_SIZE (r_pointfile) == 0)
 		return;
 
@@ -875,6 +881,7 @@ static void SCR_DrawEdictInfo (cb_context_t *cbx)
 		SCR_SetInfoColor (bgcolor, 0.25f, 0.0f, 0.0f);
 		SCR_DrawInfoPanel (cbx, x, y, lines, numlines, bgcolor);
 	}
+#endif
 
 	if (VEC_SIZE (bbox_linked) == 0)
 		return;
@@ -1395,10 +1402,17 @@ SCR_DrawGUI
 */
 static void SCR_DrawGUI (void *unused)
 {
+#ifdef RT_RENDERER
+	// RT: contexts are inline structs (no Vulkan secondary command buffers / pipelines); the RTGL1 rasterizer draws 2D
+	cb_context_t *cbx = &vulkan_globals.secondary_cb_contexts[CBX_GUI];
+
+	GL_SetCanvas (cbx, CANVAS_DEFAULT);
+#else
 	cb_context_t *cbx = vulkan_globals.secondary_cb_contexts[SCBX_GUI];
 
 	GL_SetCanvas (cbx, CANVAS_DEFAULT);
 	R_BindPipeline (cbx, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan_globals.basic_blend_pipeline[cbx->render_pass_index]);
+#endif
 
 	// FIXME: only call this when needed
 	R_BeginDebugUtilsLabel (cbx, "2D");
@@ -1443,7 +1457,9 @@ static void SCR_DrawGUI (void *unused)
 		Sbar_Draw (cbx);
 		SCR_DrawDevStats (cbx); // johnfitz
 		SCR_DrawFPS (cbx);		// johnfitz
+#ifndef RT_RENDERER
 		SCR_DrawSpeeds (cbx);
+#endif
 		SCR_DrawClock (cbx); // johnfitz
 		SCR_DrawEdictInfo (cbx);
 		SCR_DrawConsole (cbx);
@@ -1472,11 +1488,13 @@ SCR_DrawDone
 */
 static void SCR_DrawDone (void *unused)
 {
+#ifndef RT_RENDERER // RT: no scr_speeds cpu/gpu-wait timers (vanilla gl_rmain.c / gl_vidsdl.c)
 	if (scr_speeds.value)
 		rs_cputime_us = (uint32_t)((Sys_DoubleTime () - rs_frame_starttime) * 1000000.0);
 	// end_rendering depends on draw_done, so this can't lose a wait from the current frame
 	rs_gpuwaittime_us = rs_gpuwaitaccum_us;
 	rs_gpuwaitaccum_us = 0;
+#endif
 	r_framecount++;
 }
 
@@ -1501,6 +1519,11 @@ void SCR_UpdateScreen (qboolean use_tasks)
 
 	in_update_screen = true;
 	use_tasks = use_tasks && (Tasks_NumWorkers () > 1) && r_tasks.value && r_gpulightmapupdate.value;
+#ifdef RT_RENDERER
+	// RT: the frame is always sequenced single-threaded, as on modernise-2026 (RTGL1 upload/draw calls are
+	// issued from the main thread; the task graph below is kept compiled for when that is revisited).
+	use_tasks = false;
+#endif
 
 	if (scr_disabled_for_loading)
 	{
@@ -1523,7 +1546,11 @@ void SCR_UpdateScreen (qboolean use_tasks)
 	con_forcedup = !cl.worldmodel || cls.signon != SIGNONS;
 
 	task_handle_t begin_rendering_task = INVALID_TASK_HANDLE;
+#ifdef RT_RENDERER
+	if (!GL_BeginRendering (use_tasks, &begin_rendering_task, &glx, &gly, &glwidth, &glheight)) // RT: 1.20.3-shape signature
+#else
 	if (!GL_BeginRendering (use_tasks, &begin_rendering_task, &glwidth, &glheight))
+#endif
 	{
 		in_update_screen = false;
 		return;

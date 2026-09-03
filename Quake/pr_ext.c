@@ -2367,7 +2367,12 @@ static void PF_sv_getlight (void)
 
 	// FIXME: seems like quakespasm doesn't do lits for model lighting, so we won't either.
 	vec3_t lightcolor;
+#ifdef RT_RENDERER
+	// RT: rt_gl_rlight.c keeps the 1.20.3 R_LightPoint shape (no z offset parameter)
+	G_FLOAT (OFS_RETURN + 0) = G_FLOAT (OFS_RETURN + 1) = G_FLOAT (OFS_RETURN + 2) = R_LightPoint (point, &lc, &lightcolor) / 255.0;
+#else
 	G_FLOAT (OFS_RETURN + 0) = G_FLOAT (OFS_RETURN + 1) = G_FLOAT (OFS_RETURN + 2) = R_LightPoint (point, 0.f, &lc, &lightcolor) / 255.0;
+#endif
 
 	cl.worldmodel = om;
 }
@@ -4791,6 +4796,74 @@ static qpic_t *DrawQC_CachePic (const char *picname, int picflags)
 	return p;
 }
 extern gltexture_t *char_texture;
+#ifdef RT_RENDERER
+// RT: the QC HUD builtins draw through RTGL1's rasterizer, same path as Draw_Character in rt_gl_draw.c
+static void DrawQC_CharacterQuad (cb_context_t *cbx, float x, float y, int num, float w, float h, float *rgb, float alpha)
+{
+	float	 size = 0.0625;
+	float	 frow = (num >> 4) * size;
+	float	 fcol = (num & 15) * size;
+	qboolean alpha_blend = alpha < 1.0f;
+	size = 0.0624; // avoid rounding errors...
+
+	RgVertex vertices[6];
+	{
+		RgVertex corner_verts[4] = {0};
+
+		corner_verts[0].position[0] = x;
+		corner_verts[0].position[1] = y;
+		corner_verts[0].position[2] = 0.0f;
+		corner_verts[0].texCoord[0] = fcol;
+		corner_verts[0].texCoord[1] = frow;
+		corner_verts[0].packedColor = RT_PACKED_COLOR_WHITE;
+
+		corner_verts[1].position[0] = x + w;
+		corner_verts[1].position[1] = y;
+		corner_verts[1].position[2] = 0.0f;
+		corner_verts[1].texCoord[0] = fcol + size;
+		corner_verts[1].texCoord[1] = frow;
+		corner_verts[1].packedColor = RT_PACKED_COLOR_WHITE;
+
+		corner_verts[2].position[0] = x + w;
+		corner_verts[2].position[1] = y + h;
+		corner_verts[2].position[2] = 0.0f;
+		corner_verts[2].texCoord[0] = fcol + size;
+		corner_verts[2].texCoord[1] = frow + size;
+		corner_verts[2].packedColor = RT_PACKED_COLOR_WHITE;
+
+		corner_verts[3].position[0] = x;
+		corner_verts[3].position[1] = y + h;
+		corner_verts[3].position[2] = 0.0f;
+		corner_verts[3].texCoord[0] = fcol;
+		corner_verts[3].texCoord[1] = frow + size;
+		corner_verts[3].packedColor = RT_PACKED_COLOR_WHITE;
+
+		vertices[0] = corner_verts[0];
+		vertices[1] = corner_verts[1];
+		vertices[2] = corner_verts[2];
+		vertices[3] = corner_verts[2];
+		vertices[4] = corner_verts[3];
+		vertices[5] = corner_verts[0];
+	}
+
+	RgRasterizedGeometryUploadInfo info = {
+		.renderType = RG_RASTERIZED_GEOMETRY_RENDER_TYPE_SWAPCHAIN,
+		.vertexCount = countof (vertices),
+		.pVertices = vertices,
+		.indexCount = 0,
+		.pIndices = NULL,
+		.transform = RT_TRANSFORM_IDENTITY,
+		.color = {rgb[0], rgb[1], rgb[2], alpha},
+		.material = char_texture ? char_texture->rtmaterial : RG_NO_MATERIAL,
+		.pipelineState = alpha_blend ? RG_RASTERIZED_GEOMETRY_STATE_BLEND_ENABLE : RG_RASTERIZED_GEOMETRY_STATE_ALPHA_TEST,
+		.blendFuncSrc = alpha_blend ? RG_BLEND_FACTOR_SRC_ALPHA : 0,
+		.blendFuncDst = alpha_blend ? RG_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA : 0,
+	};
+
+	RgResult r = rgUploadRasterizedGeometry (vulkan_globals.instance, &info, cbx->cur_viewprojection, &cbx->cur_viewport);
+	RG_CHECK (r);
+}
+#else
 static void			DrawQC_CharacterQuad (cb_context_t *cbx, float x, float y, int num, float w, float h, float *rgb, float alpha)
 {
 	float	 size = 0.0625;
@@ -4855,6 +4928,7 @@ static void			DrawQC_CharacterQuad (cb_context_t *cbx, float x, float y, int num
 		cbx->cb, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan_globals.basic_pipeline_layout.handle, 0, 1, &char_texture->descriptor_set, 0, NULL);
 	vulkan_globals.vk_cmd_draw (cbx->cb, 6, 1, 0, 0);
 }
+#endif
 static void PF_cl_drawcharacter (void)
 {
 	extern gltexture_t *char_texture;
@@ -4868,7 +4942,11 @@ static void PF_cl_drawcharacter (void)
 	if (charcode == 32)
 		return; // don't waste time on spaces
 
+#ifdef RT_RENDERER
+	DrawQC_CharacterQuad (&vulkan_globals.secondary_cb_contexts[CBX_GUI], pos[0], pos[1], charcode, size[0], size[1], rgb, alpha);
+#else
 	DrawQC_CharacterQuad (vulkan_globals.secondary_cb_contexts[SCBX_GUI], pos[0], pos[1], charcode, size[0], size[1], rgb, alpha);
+#endif
 }
 
 static void PF_cl_drawrawstring (void)
@@ -4887,7 +4965,11 @@ static void PF_cl_drawrawstring (void)
 
 	while ((c = *text++))
 	{
+#ifdef RT_RENDERER
+		DrawQC_CharacterQuad (&vulkan_globals.secondary_cb_contexts[CBX_GUI], x, pos[1], c, size[0], size[1], rgb, alpha);
+#else
 		DrawQC_CharacterQuad (vulkan_globals.secondary_cb_contexts[SCBX_GUI], x, pos[1], c, size[0], size[1], rgb, alpha);
+#endif
 		x += size[0];
 	}
 }
@@ -4910,7 +4992,11 @@ static void PF_cl_drawstring (void)
 
 	while ((c = PR_Markup_Parse (&mu)))
 	{
+#ifdef RT_RENDERER
+		DrawQC_CharacterQuad (&vulkan_globals.secondary_cb_contexts[CBX_GUI], x, pos[1], c, size[0], size[1], rgb, alpha);
+#else
 		DrawQC_CharacterQuad (vulkan_globals.secondary_cb_contexts[SCBX_GUI], x, pos[1], c, size[0], size[1], rgb, alpha);
+#endif
 		x += size[0];
 	}
 }
@@ -4938,6 +5024,16 @@ static void PF_cl_stringwidth (void)
 	G_FLOAT (OFS_RETURN) = fontsize[0] * r;
 }
 
+#ifdef RT_RENDERER
+static void PF_cl_drawsetclip (void)
+{
+	// TODO(rt): RTGL1's rasterized-geometry path exposes no scissor rect; QC clip regions are ignored (no-op, as in the 2022 fork)
+}
+static void PF_cl_drawresetclip (void)
+{
+	// TODO(rt): see PF_cl_drawsetclip
+}
+#else
 static void PF_cl_drawsetclip (void)
 {
 	float s = PR_GetVMScale ();
@@ -4963,6 +5059,7 @@ static void PF_cl_drawresetclip (void)
 	render_area.extent.height = vid.height;
 	vkCmdSetScissor (vulkan_globals.secondary_cb_contexts[SCBX_GUI][0].cb, 0, 1, &render_area);
 }
+#endif
 
 static void PF_cl_precachepic (void)
 {
@@ -5002,7 +5099,11 @@ static void PF_cl_drawpic (void)
 	float	alpha = G_FLOAT (OFS_PARM4);
 
 	if (pic)
+#ifdef RT_RENDERER
+		Draw_SubPic (&vulkan_globals.secondary_cb_contexts[CBX_GUI], pos[0], pos[1], size[0], size[1], pic, 0, 0, 1, 1, rgb, alpha);
+#else
 		Draw_SubPic (vulkan_globals.secondary_cb_contexts[SCBX_GUI], pos[0], pos[1], size[0], size[1], pic, 0, 0, 1, 1, rgb, alpha);
+#endif
 
 	SDL_UnlockMutex (draw_qcvm_mutex);
 }
@@ -5033,12 +5134,78 @@ static void PF_cl_drawsubpic (void)
 	float	alpha = G_FLOAT (OFS_PARM6);
 
 	if (pic)
+#ifdef RT_RENDERER
+		Draw_SubPic (
+			&vulkan_globals.secondary_cb_contexts[CBX_GUI], pos[0], pos[1], size[0], size[1], pic, srcpos[0], srcpos[1], srcsize[0], srcsize[1], rgb, alpha);
+#else
 		Draw_SubPic (
 			vulkan_globals.secondary_cb_contexts[SCBX_GUI], pos[0], pos[1], size[0], size[1], pic, srcpos[0], srcpos[1], srcsize[0], srcsize[1], rgb, alpha);
+#endif
 
 	SDL_UnlockMutex (draw_qcvm_mutex);
 }
 
+#ifdef RT_RENDERER
+// RT: untextured blended quad through RTGL1's rasterizer, same path as Draw_Fill in rt_gl_draw.c
+static void PF_cl_drawfill (void)
+{
+	float *pos = G_VECTOR (OFS_PARM0);
+	float *size = G_VECTOR (OFS_PARM1);
+	float *rgb = G_VECTOR (OFS_PARM2);
+	float  alpha = G_FLOAT (OFS_PARM3);
+
+	RgVertex vertices[6];
+	{
+		RgVertex corner_verts[4] = {0};
+
+		corner_verts[0].position[0] = pos[0];
+		corner_verts[0].position[1] = pos[1];
+		corner_verts[0].position[2] = 0.0f;
+		corner_verts[0].packedColor = RT_PACKED_COLOR_WHITE;
+
+		corner_verts[1].position[0] = pos[0] + size[0];
+		corner_verts[1].position[1] = pos[1];
+		corner_verts[1].position[2] = 0.0f;
+		corner_verts[1].packedColor = RT_PACKED_COLOR_WHITE;
+
+		corner_verts[2].position[0] = pos[0] + size[0];
+		corner_verts[2].position[1] = pos[1] + size[1];
+		corner_verts[2].position[2] = 0.0f;
+		corner_verts[2].packedColor = RT_PACKED_COLOR_WHITE;
+
+		corner_verts[3].position[0] = pos[0];
+		corner_verts[3].position[1] = pos[1] + size[1];
+		corner_verts[3].position[2] = 0.0f;
+		corner_verts[3].packedColor = RT_PACKED_COLOR_WHITE;
+
+		vertices[0] = corner_verts[0];
+		vertices[1] = corner_verts[1];
+		vertices[2] = corner_verts[2];
+		vertices[3] = corner_verts[2];
+		vertices[4] = corner_verts[3];
+		vertices[5] = corner_verts[0];
+	}
+
+	cb_context_t *cbx = &vulkan_globals.secondary_cb_contexts[CBX_GUI];
+
+	RgRasterizedGeometryUploadInfo info = {
+		.renderType = RG_RASTERIZED_GEOMETRY_RENDER_TYPE_SWAPCHAIN,
+		.vertexCount = countof (vertices),
+		.pVertices = vertices,
+		.indexCount = 0,
+		.pIndices = NULL,
+		.transform = RT_TRANSFORM_IDENTITY,
+		.color = {rgb[0], rgb[1], rgb[2], alpha},
+		.material = RG_NO_MATERIAL,
+		.pipelineState = RG_RASTERIZED_GEOMETRY_STATE_BLEND_ENABLE,
+		.blendFuncSrc = RG_BLEND_FACTOR_SRC_ALPHA,
+		.blendFuncDst = RG_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+	};
+
+	RgResult r = rgUploadRasterizedGeometry (vulkan_globals.instance, &info, cbx->cur_viewprojection, &cbx->cur_viewport);
+	RG_CHECK (r);
+}
+#else
 static void PF_cl_drawfill (void)
 {
 	int	   i;
@@ -5092,6 +5259,7 @@ static void PF_cl_drawfill (void)
 		cbx->cb, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan_globals.basic_pipeline_layout.handle, 0, 1, &char_texture->descriptor_set, 0, NULL);
 	vulkan_globals.vk_cmd_draw (cbx->cb, 6, 1, 0, 0);
 }
+#endif
 
 static void PF_cl_playerkey_internal (int player, const char *key, qboolean retfloat)
 {

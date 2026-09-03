@@ -2256,7 +2256,11 @@ static void Host_Loadgame_f (void)
 		Fog_ResetFade ();
 		R_ClearParticles ();
 #ifdef PSET_SCRIPT
+#ifdef RT_RENDERER
+		PScript_ClearParticles (); // RT: rt_r_part_fte.c keeps the 1.20.3 no-argument shape
+#else
 		PScript_ClearParticles (false);
+#endif
 #endif
 		SCR_CenterPrintClear ();
 

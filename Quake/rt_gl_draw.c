@@ -464,8 +464,9 @@ void Draw_Init (void)
 Draw_FillCharacterQuad
 ================
 */
-static void Draw_FillCharacterQuad (int x, int y, char num, RgVertex *output, int rotation)
+static void Draw_FillCharacterQuadScaled (float x, float y, float scale, char num, RgVertex *output, int rotation)
 {
+	const float px = CHARACTER_SIZE * scale;
 	int   row, col;
 	float frow, fcol, size;
 
@@ -480,9 +481,9 @@ static void Draw_FillCharacterQuad (int x, int y, char num, RgVertex *output, in
 
 	float texcoords[4][2] = {
 		{x, y},
-		{x + 8, y},
-		{x + 8, y + 8},
-		{x, y + 8},
+		{x + px, y},
+		{x + px, y + px},
+		{x, y + px},
 	};
 
 	corner_verts[0].position[0] = texcoords[(rotation + 0) % 4][0];
@@ -519,6 +520,11 @@ static void Draw_FillCharacterQuad (int x, int y, char num, RgVertex *output, in
 	output[3] = corner_verts[2];
 	output[4] = corner_verts[3];
 	output[5] = corner_verts[0];
+}
+
+static void Draw_FillCharacterQuad (float x, float y, char num, RgVertex *output, int rotation)
+{
+	Draw_FillCharacterQuadScaled (x, y, 1.0f, num, output, rotation);
 }
 
 /*
@@ -586,6 +592,57 @@ void Draw_String (cb_context_t *cbx, float x, float y, const char *str)
 			i++;
 		}
 		x += 8;
+	}
+
+	RgRasterizedGeometryUploadInfo info = {
+		.renderType = RG_RASTERIZED_GEOMETRY_RENDER_TYPE_SWAPCHAIN,
+		.vertexCount = num_verts,
+		.pVertices = vertices,
+		.indexCount = 0,
+		.pIndices = NULL,
+		.transform = RT_TRANSFORM_IDENTITY,
+		.color = RT_COLOR_WHITE,
+		.material = char_texture ? char_texture->rtmaterial : RG_NO_MATERIAL,
+		.pipelineState = RG_RASTERIZED_GEOMETRY_STATE_ALPHA_TEST,
+		.blendFuncSrc = 0,
+		.blendFuncDst = 0,
+	};
+
+	RgResult r = rgUploadRasterizedGeometry (vulkan_globals.instance, &info, cbx->cur_viewprojection, &cbx->cur_viewport);
+	RG_CHECK (r);
+}
+
+/*
+================
+Draw_String_Scaled -- 1.36
+================
+*/
+void Draw_String_Scaled (cb_context_t *cbx, float x, float y, const char *str, float scale)
+{
+	int         num_verts = 0;
+	int         i;
+	const char *tmp;
+	const float size = CHARACTER_SIZE * scale;
+
+	if (y <= -size)
+		return; // totally off screen
+
+	for (tmp = str; *tmp != 0; ++tmp)
+		if (*tmp != 32)
+			num_verts += 6;
+	if (num_verts == 0)
+		return;
+
+	RgVertex *vertices = RT_AllocScratchMemoryNulled (num_verts * sizeof (RgVertex));
+
+	for (i = 0; *str != 0; ++str)
+	{
+		if (*str != 32)
+		{
+			Draw_FillCharacterQuadScaled (x, y, scale, *str, vertices + i * 6, 0);
+			i++;
+		}
+		x += size;
 	}
 
 	RgRasterizedGeometryUploadInfo info = {

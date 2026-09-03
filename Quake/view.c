@@ -915,9 +915,11 @@ void V_RenderView (
 {
 	if (con_forcedup)
 	{
+#ifndef RT_RENDERER // RT: no debug-entity overlay, warp or render-scale state in the RTGL1 renderer
 		R_ClearDebugEntityInfo ();
 		render_warp = false;
 		render_scale = 1;
+#endif
 		return;
 	}
 
@@ -928,7 +930,12 @@ void V_RenderView (
 		CL_RelinkEntities ();
 	}
 
+#ifdef RT_RENDERER
+	(void)draw_gui_task; // RT: rt_gl_rmain.c's R_RenderView has no separate GUI task
+	R_RenderView (use_tasks, begin_rendering_task, setup_frame_task, draw_done_task);
+#else
 	R_RenderView (use_tasks, begin_rendering_task, setup_frame_task, draw_done_task, draw_gui_task);
+#endif
 	return;
 }
 
