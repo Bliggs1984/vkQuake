@@ -719,7 +719,9 @@ void CL_RelinkEntities (void)
 		if (ent->msgtime != cl.mtime[0])
 		{
 			ent->model = NULL;
+#ifndef RT_RENDERER // vanilla per-entity BLAS; RTGL1 builds its own acceleration structures
 			R_FreeEntityBLAS (ent);
+#endif
 			InvalidateTraceLineCache ();
 			continue;
 		}
