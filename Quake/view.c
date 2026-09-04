@@ -43,6 +43,11 @@ cvar_t cl_bob = {"cl_bob", "0.02", CVAR_ARCHIVE_GAME};
 cvar_t cl_bobcycle = {"cl_bobcycle", "0.6", CVAR_NONE};
 cvar_t cl_bobup = {"cl_bobup", "0.5", CVAR_NONE};
 
+#ifdef RT_RENDERER
+float    rt_dmg_value;       // last damage strength 0..1, consumed by rt_gl_vidsdl.c (screen effects)
+qboolean rt_dmg_inthisframe; // set when V_ParseDamage ran this frame
+#endif
+
 cvar_t v_kicktime = {"v_kicktime", "0.5", CVAR_NONE};
 cvar_t v_kickroll = {"v_kickroll", "0.6", CVAR_NONE};
 cvar_t v_kickpitch = {"v_kickpitch", "0.6", CVAR_NONE};
@@ -349,6 +354,11 @@ void V_ParseDamage (void)
 	cl.v_dmg_pitch = count * side * v_kickpitch.value;
 
 	cl.v_dmg_time = v_kicktime.value;
+
+#ifdef RT_RENDERER
+	rt_dmg_value = CLAMP (0.0f, count / 30.0f, 1.0f);
+	rt_dmg_inthisframe = true;
+#endif
 }
 
 /*

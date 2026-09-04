@@ -29,7 +29,7 @@ extern cvar_t r_flatlightstyles; // johnfitz
 extern cvar_t r_lerplightstyles;
 extern cvar_t r_gpulightmapupdate;
 
-extern SDL_mutex *lightcache_mutex;
+SDL_Mutex *lightcache_mutex; // created in rt_gl_rmisc.c R_Init (1.36 lightcache_t has no per-cache mutex)
 
 /*
 ==================

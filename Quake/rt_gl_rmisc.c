@@ -38,7 +38,9 @@ extern cvar_t r_drawworld;
 extern cvar_t r_showtris;
 extern cvar_t r_showbboxes;
 extern cvar_t r_lerpmodels;
-extern cvar_t r_lerpturn, r_showfields_align, r_oit; // defined in rt_gl_rmain.c (1.36 shared-code cvars)
+extern cvar_t r_lerpturn, r_showfields_align, r_oit;
+extern cvar_t r_showfields;
+extern SDL_Mutex *lightcache_mutex; // rt_gl_rlight.c // defined in rt_gl_rmain.c (1.36 shared-code cvars)
 extern cvar_t r_lerpmove;
 extern cvar_t r_nolerp_list;
 // johnfitz
@@ -221,6 +223,9 @@ void R_Init (void)
 	Cvar_RegisterVariable (&r_lerpturn);
 	Cvar_RegisterVariable (&r_showfields_align);
 	Cvar_RegisterVariable (&r_oit);
+	Cvar_RegisterVariable (&r_showfields);
+	if (!lightcache_mutex)
+		lightcache_mutex = SDL_CreateMutex ();
 	Cvar_RegisterVariable (&r_lerpmove);
 	Cvar_RegisterVariable (&r_nolerp_list);
 	Cvar_SetCallback (&r_nolerp_list, R_Model_ExtraFlags_List_f);

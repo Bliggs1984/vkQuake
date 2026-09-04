@@ -88,6 +88,8 @@ cvar_t r_lerpmodels = {"r_lerpmodels", "1", CVAR_NONE};
 cvar_t r_lerpturn = {"r_lerpturn", "1", CVAR_ARCHIVE_GAME};
 cvar_t r_showfields_align = {"r_showfields_align", "1", CVAR_ARCHIVE}; // 0=entity pos; 1=bottom-right
 cvar_t r_oit = {"r_oit", "1", CVAR_ARCHIVE}; // TODO(rt): vanilla order-independent transparency; no effect under RTGL1
+cvar_t r_showfields = {"r_showfields", "0", CVAR_NONE}; // 1.36 edict field overlay (gl_screen.c); registered in rt_gl_rmisc.c
+edict_t **bbox_linked = NULL;                                // 1.36 r_showbboxes_filter linked edicts (gl_screen.c). TODO(rt): bbox drawing not ported
 cvar_t r_lerpmove = {"r_lerpmove", "1", CVAR_NONE};
 cvar_t r_nolerp_list = {
 	"r_nolerp_list",

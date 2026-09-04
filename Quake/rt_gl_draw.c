@@ -27,6 +27,10 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "quakedef.h"
 #include "gl_heap.h"
 
+// 1.36: GL_SetCanvasColor modulates Draw_Character/Draw_String output (menu.c, console.c)
+static float canvas_color[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+// 1.36 cvar referenced by menu.c; vanilla defines it in gl_draw.c. TODO(rt): RTGL1 GUI sampler filter not wired
+cvar_t scr_guifilter = {"scr_guifilter", "0", CVAR_ARCHIVE};
 cvar_t scr_conalpha = {"scr_conalpha", "0.5", CVAR_ARCHIVE}; // johnfitz
 
 extern cvar_t rt_hud_padding;
@@ -437,6 +441,7 @@ Draw_Init -- johnfitz -- rewritten
 void Draw_Init (void)
 {
 	Cvar_RegisterVariable (&scr_conalpha);
+	Cvar_RegisterVariable (&scr_guifilter);
 
 	// clear scrap and allocate gltextures
 	memset (scrap_allocated, 0, sizeof (scrap_allocated));
@@ -553,7 +558,7 @@ void Draw_Character (cb_context_t *cbx, float x, float y, int num)
 		.indexCount = 0,
 		.pIndices = NULL,
 		.transform = RT_TRANSFORM_IDENTITY,
-		.color = RT_COLOR_WHITE,
+		.color = {canvas_color[0], canvas_color[1], canvas_color[2], canvas_color[3]},
 		.material = char_texture ? char_texture->rtmaterial : RG_NO_MATERIAL,
 		.pipelineState = RG_RASTERIZED_GEOMETRY_STATE_ALPHA_TEST,
 		.blendFuncSrc = 0,
@@ -601,7 +606,7 @@ void Draw_String (cb_context_t *cbx, float x, float y, const char *str)
 		.indexCount = 0,
 		.pIndices = NULL,
 		.transform = RT_TRANSFORM_IDENTITY,
-		.color = RT_COLOR_WHITE,
+		.color = {canvas_color[0], canvas_color[1], canvas_color[2], canvas_color[3]},
 		.material = char_texture ? char_texture->rtmaterial : RG_NO_MATERIAL,
 		.pipelineState = RG_RASTERIZED_GEOMETRY_STATE_ALPHA_TEST,
 		.blendFuncSrc = 0,
@@ -652,7 +657,7 @@ void Draw_String_Scaled (cb_context_t *cbx, float x, float y, const char *str, f
 		.indexCount = 0,
 		.pIndices = NULL,
 		.transform = RT_TRANSFORM_IDENTITY,
-		.color = RT_COLOR_WHITE,
+		.color = {canvas_color[0], canvas_color[1], canvas_color[2], canvas_color[3]},
 		.material = char_texture ? char_texture->rtmaterial : RG_NO_MATERIAL,
 		.pipelineState = RG_RASTERIZED_GEOMETRY_STATE_ALPHA_TEST,
 		.blendFuncSrc = 0,
@@ -806,6 +811,30 @@ void Draw_SubPic (cb_context_t *cbx, float x, float y, float w, float h, qpic_t 
 
 	RgResult r = rgUploadRasterizedGeometry (vulkan_globals.instance, &info, cbx->cur_viewprojection, &cbx->cur_viewport);
 	RG_CHECK (r);
+}
+
+/*
+=============
+Draw_SubPicLinear -- 1.36: same as Draw_SubPic but forces linear filtering.
+TODO(rt): RTGL1 rasterized geometry uses the material's sampler; no per-draw filter override.
+=============
+*/
+void Draw_SubPicLinear (cb_context_t *cbx, float x, float y, float w, float h, qpic_t *pic, float s1, float t1, float s2, float t2, float *rgb, float alpha)
+{
+	Draw_SubPic (cbx, x, y, w, h, pic, s1, t1, s2, t2, rgb, alpha);
+}
+
+/*
+=============
+GL_SetCanvasColor -- 1.36: modulates Draw_Character/Draw_String output
+=============
+*/
+void GL_SetCanvasColor (float r, float g, float b, float a)
+{
+	canvas_color[0] = r;
+	canvas_color[1] = g;
+	canvas_color[2] = b;
+	canvas_color[3] = a;
 }
 
 /*
