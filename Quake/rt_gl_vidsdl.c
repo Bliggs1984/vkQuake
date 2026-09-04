@@ -1568,7 +1568,8 @@ void VID_Init (void)
 	float       display_refreshrate;
 	qboolean    fullscreen;
 	const char *read_vars[] = {"vid_fullscreen",        "vid_width",    "vid_height", "vid_refreshrate", "vid_vsync",
-	                           "vid_desktopfullscreen", "vid_borderless"};
+	                           "vid_desktopfullscreen", "vid_borderless",
+	                           "_rt_firsttime" /* RT: must be read before the first-run 1440p prompt */};
 #define num_readvars countof (read_vars)
 
 	Cvar_RegisterVariable (&vid_fullscreen);  // johnfitz
