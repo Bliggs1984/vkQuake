@@ -103,3 +103,16 @@ Symbolize: find the largest map address <= 0x140000000 + offset (see the PowerSh
 - Diagnostic scripts in `C:\Utils\AIstuff\QuakeRT\tools_tmp\`: `rtcompile.ps1` (rt_*.c, RT defines),
   `vkcompile.ps1` (shared files, vanilla defines), `rtsweep.ps1` (shared files in the RT-Release set, RT
   defines), `rtset.py` (RT-Release inclusion list from the vcxproj).
+
+### Data-set smoke tests under RT (2026-09-04, `tools_tmp/run_smoke.ps1`, Steam rerelease data)
+
+| Data | Map | Result |
+|---|---|---|
+| id1 (smoke-id1) | demo1 | renders: world, RT lights, HUD, viewmodel |
+| hipnotic | hip1m1 | renders (skylight, metal walls, grunt) |
+| rogue | r1m1 | renders |
+| mg1 (Dawn of the Machine) | mge1m1 | renders after ~40 s load (classic .mdl fallbacks; MD5 is Stage 5) |
+
+Shared `%APPDATA%\vkQuake\vkQuake.cfg` is written by whichever build ran last; the RT build logs
+"Unknown command" for vanilla-only cvars (`r_alphasort`, `r_quadparticles`, `r_rtshadows`) — harmless,
+could be registered as inert cvars under RT to keep the console quiet.
