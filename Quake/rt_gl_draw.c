@@ -802,7 +802,7 @@ void Draw_SubPic (cb_context_t *cbx, float x, float y, float w, float h, qpic_t 
 		.indexCount = 0,
 		.pIndices = NULL,
 		.transform = RT_TRANSFORM_IDENTITY,
-		.color = {rgb[0], rgb[1], rgb[2], alpha},
+		.color = {rgb ? rgb[0] : 1.0f, rgb ? rgb[1] : 1.0f, rgb ? rgb[2] : 1.0f, alpha}, // 1.36 callers pass rgb == NULL for white
 		.material = gl.gltexture ? gl.gltexture->rtmaterial : RG_NO_MATERIAL,
 		.pipelineState = alpha_blend ? RG_RASTERIZED_GEOMETRY_STATE_BLEND_ENABLE : RG_RASTERIZED_GEOMETRY_STATE_ALPHA_TEST,
 		.blendFuncSrc = alpha_blend ? RG_BLEND_FACTOR_SRC_ALPHA : 0,
