@@ -108,8 +108,10 @@ void CL_FreeState (void)
 #endif
 	}
 	Mem_Free (cl.entities);
+#ifndef RT_RENDERER // vanilla per-entity BLAS; RTGL1 builds its own acceleration structures
 	for (i = 0; i < cl.num_statics; i++)
 		R_FreeEntityBLAS (cl.static_entities[i]);
+#endif
 	for (i = 0; i < cl.num_statics; i += 64)
 		Mem_Free (cl.static_entities[i]);
 	Mem_Free (cl.static_entities);

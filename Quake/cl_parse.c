@@ -1325,7 +1325,9 @@ static void CL_ParseUpdate (int bits)
 	model = cl.model_precache[modnum];
 	if (model != ent->model)
 	{
+#ifndef RT_RENDERER // vanilla per-entity BLAS; RTGL1 builds its own acceleration structures
 		R_FreeEntityBLAS (ent); // Free old BLAS before model change
+#endif
 		ent->model = model;
 		InvalidateTraceLineCache ();
 		// automatic animation (torches, etc) can be either all together
