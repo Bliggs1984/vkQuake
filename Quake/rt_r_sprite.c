@@ -41,7 +41,7 @@ static mspriteframe_t *R_GetSpriteFrame (entity_t *currentent)
 	int             i, numframes, frame;
 	float		  *pintervals, fullinterval, targettime, time;
 
-	psprite = (msprite_t *)currentent->model->extradata;
+	psprite = (msprite_t *)Mod_Extradata (currentent->model); // 1.36: extradata is an array, use the accessor
 	frame = currentent->frame;
 
 	if ((frame >= psprite->numframes) || (frame < 0))
@@ -91,7 +91,7 @@ static void R_CreateSpriteVertices (entity_t *e, mspriteframe_t *frame, RgVertex
 	float     *s_up, *s_right;
 	float      angle, sr, cr;
 
-	psprite = (msprite_t *)e->model->extradata;
+	psprite = (msprite_t *)Mod_Extradata (e->model);
 
 	switch (psprite->type)
 	{
@@ -185,7 +185,7 @@ R_DrawSpriteModel -- johnfitz -- rewritten: now supports all orientations
 */
 void R_DrawSpriteModel (cb_context_t *cbx, entity_t *e, int entuniqueid)
 {
-	msprite_t      *psprite = (msprite_t *)e->model->extradata;
+	msprite_t      *psprite = (msprite_t *)Mod_Extradata (e->model);
 	mspriteframe_t *frame = R_GetSpriteFrame (e);
 	gltexture_t    *tx = frame->gltexture;
 

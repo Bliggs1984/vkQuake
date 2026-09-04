@@ -294,10 +294,9 @@ Draw_CachePic
 */
 qpic_t *Draw_TryCachePic (const char *path, unsigned int texflags, int picflags)
 {
-	(void)picflags; // TODO(rt): see Draw_PicFromWad2
+	(void)picflags; // TODO(rt): 1.36 PICFLAG_* (wrap/mipmap/noload) not honoured by the RT pic cache yet
 	cachepic_t *pic;
 	int         i;
-	qpic_t     *dat;
 	glpic_t     gl;
 
 	for (pic = menu_cachepics, i = 0; i < menu_numcachepics; pic++, i++)
@@ -309,27 +308,31 @@ qpic_t *Draw_TryCachePic (const char *path, unsigned int texflags, int picflags)
 		Sys_Error ("menu_numcachepics == MAX_CACHED_PICS");
 
 	//
-	// load the pic from disk
+	// load the pic from disk (1.36: any format Image_LoadImage understands -- .lmp, .png, .tga, .jpg)
 	//
-	dat = (qpic_t *)COM_LoadFile (path, NULL);
-	if (!dat)
+	unsigned int   pic_width = 0;
+	unsigned int   pic_height = 0;
+	enum srcformat pic_fmt = SRC_INDEXED;
+	char           npath[MAX_QPATH];
+	COM_StripExtension (path, npath, sizeof (npath)); // Image_LoadImage works without extensions
+	byte *pic_data = Image_LoadImage (npath, (int *)&pic_width, (int *)&pic_height, &pic_fmt, 0);
+	if (!pic_data)
 		return NULL;
-	SwapPic (dat);
 
 	menu_numcachepics++;
-	strcpy (pic->name, path);
+	q_strlcpy (pic->name, path, sizeof (pic->name));
 
 	// HACK HACK HACK --- we need to keep the bytes for
 	// the translatable player picture just for the menu
 	// configuration dialog
-	if (!strcmp (path, "gfx/menuplyr.lmp"))
-		memcpy (menuplyr_pixels, dat->data, dat->width * dat->height);
+	if (!strcmp (path, "gfx/menuplyr.lmp") && pic_fmt == SRC_INDEXED)
+		memcpy (menuplyr_pixels, pic_data, q_min (pic_width * pic_height, (unsigned int)sizeof (menuplyr_pixels)));
 
-	pic->pic.width = dat->width;
-	pic->pic.height = dat->height;
+	pic->pic.width = pic_width;
+	pic->pic.height = pic_height;
 
-	gl.gltexture = TexMgr_LoadImage (
-		path, NULL, path, dat->width, dat->height, SRC_INDEXED, dat->data, path, sizeof (int) * 2, texflags | TEXPREF_NOPICMIP); // johnfitz -- TexMgr
+	// pass the extensionless name as the source so TexMgr_ReloadImage can find the image again through Image_LoadImage
+	gl.gltexture = TexMgr_LoadImage (path, NULL, path, pic_width, pic_height, pic_fmt, pic_data, npath, 0, texflags | TEXPREF_NOPICMIP); // johnfitz -- TexMgr
 	gl.sl = 0;
 	gl.sh = 1;
 	gl.tl = 0;
@@ -337,7 +340,7 @@ qpic_t *Draw_TryCachePic (const char *path, unsigned int texflags, int picflags)
 
 	memcpy (pic->pic.data, &gl, sizeof (glpic_t));
 
-	Mem_Free (dat);
+	Mem_Free (pic_data);
 
 	return &pic->pic;
 }

@@ -53,12 +53,34 @@ Upstream 1.36 features that interact with RT and need decisions during the port:
 - [x] Stage 0: vanilla 1.36.0 builds (v143), SDL 3.4.12, Steam API up, achievement fired (Brett, 31 Aug)
 - [x] steam.c multi-library fix (`e0d31a7`)
 - [x] Submodule + patches + ovrd assets on `rt-1.36`
-- [x] RT-Release build configuration in vcxproj + sln (RT_RENDERER, RTGL1 lib, no PCH). No RT-Debug yet.
-- [x] **All 16 `rt_*.c` compile clean standalone** (`tools_tmp/rtcompile.ps1`), including the alias path
-- [~] Shared-file `#if RT_RENDERER` guards: 8 files / 131 errors under RT (`tools_tmp/rtsweep.ps1`):
-  pr_ext (42), gl_model (40), gl_screen (27), menu (15), view (3), gl_fog (2), cl_demo (1), host_cmd (1)
-- [ ] msbuild RT-Release link (RTGL1.lib already built from the same submodule commit) -> boot = Stage 1 checkpoint
-- [ ] Stage 2 world, Stage 3 dynamic, Stage 4 ship, Stage 5 MD5 (optional)
+- [x] RT-Release build configuration in vcxproj + sln (RT_RENDERER, RTGL1 lib, no PCH, linker .map). No RT-Debug yet.
+- [x] All 16 `rt_*.c` compile clean under /WX; shared files guarded (`#ifdef RT_RENDERER`, vanilla Release still builds 0 errors)
+- [x] **RT-Release links and BOOTS (2026-09-04)**: RTGL1 instance up (DLSS + FSR2 detected), console/menu, demo1
+  plays with ray-traced world, lightmapped->RT lights, HUD, viewmodel. Screenshot: `tools_tmp/smoke_menu5.png`.
+  = **Stage 1 checkpoint reached; Stage 2/3 visibly working on first boot** (needs Brett's 10-min play test).
+- [ ] Stage 2/3 sweep: verify sky, water, particles, sprites, dlights, rt_* menu, hipnotic/rogue/mg1 under RT
+- [ ] Stage 4: UPGRADING.md, Dist zip, Steam launch + achievements verified in the RT build
+- [ ] Stage 5 (optional): MD5
+
+### Runtime bugs fixed on first boot (all "compiles but wrong" 1.36 struct/API changes)
+
+- `Draw_SubPic` dereferenced `rgb` (1.36 passes NULL for white) -> crash on the loading logo.
+- `Draw_TryCachePic` parsed files as raw .lmp; 1.36 loads `gfx/crosshair-000.png` through it -> garbage
+  1196314761x169478669 texture. Now uses `Image_LoadImage` like 1.36 (any format).
+- `qmodel_t.extradata` is an array in 1.36 (`extradata[PV_SIZE]`); rt_r_sprite.c cast it directly. Use
+  `Mod_Extradata (mod)` everywhere (only sprite code was affected; rt_gl_mesh.c indexes `[PV_QUAKE1]` on purpose).
+- `_rt_firsttime` must be in the early `CFG_ReadCvars` list or the 1440p prompt blocks every start.
+
+### Crash triage recipe (no debugger installed)
+
+Windows Event Log gives module + offset; RT-Release now writes `Build-vkQuake\x64\RT-Release\vkQuake.map`.
+`tools_tmp/run_smoke.ps1 -Shot x.png` launches the smoke build, screenshots the game window, dumps the log.
+Symbolize: find the largest map address <= 0x140000000 + offset (see the PowerShell one-liner in the session log).
+
+### Known oddities
+
+- `-condebug` log (`%APPDATA%\vkQuake\qconsole.log`) stopped appearing after the first runs; not investigated.
+- `+cl_startdemos 0` on the command line does not stop the demo loop (quake.rc runs `startdemos` after stuffcmds).
 
 ### Alias path (done, 2026-09-04)
 
