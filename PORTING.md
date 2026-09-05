@@ -58,8 +58,13 @@ Upstream 1.36 features that interact with RT and need decisions during the port:
 - [x] **RT-Release links and BOOTS (2026-09-04)**: RTGL1 instance up (DLSS + FSR2 detected), console/menu, demo1
   plays with ray-traced world, lightmapped->RT lights, HUD, viewmodel. Screenshot: `tools_tmp/smoke_menu5.png`.
   = **Stage 1 checkpoint reached; Stage 2/3 visibly working on first boot** (needs Brett's 10-min play test).
-- [ ] Stage 2/3 sweep: verify sky, water, particles, sprites, dlights, rt_* menu, hipnotic/rogue/mg1 under RT
-- [ ] Stage 4: UPGRADING.md, Dist zip, Steam launch + achievements verified in the RT build
+- [x] Stage 2/3 (2026-09-05): fork's behavioural RT changes re-applied to 17 shared files under RT_RENDERER
+  (`git diff 1.20.3 modernise-2026 -- Quake/<file>` was the worklist; upstream remote + tag 1.20.3 in the repo);
+  rt_*.c audited against 1.36 semantics (24 fixes, see commit 867d8679). hipnotic/rogue/mg1 render from the
+  Steam re-release data; id1 demo loop runs. Brett's in-game verification of the Stage 3 items still pending.
+- [~] Stage 4: UPGRADING.md written; Steam API verified loading in the RT build (steam_api64 + steamclient64
+  in-process when basedir is under the Steam install); RT config moved to `%APPDATA%\QuakeRT`; zip built.
+  Remaining: Brett confirms an achievement fires from the RT build.
 - [ ] Stage 5 (optional): MD5
 
 ### Runtime bugs fixed on first boot (all "compiles but wrong" 1.36 struct/API changes)

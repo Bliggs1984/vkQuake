@@ -31,6 +31,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define QUAKE_GAME // as opposed to utilities
 
 #define CONFIG_NAME		  "vkQuake.cfg"
+#ifdef RT_RENDERER
+#define VKQUAKE_PREF_DIR "QuakeRT" // RT: own %APPDATA% folder so the RT and vanilla builds do not clobber each other's config
+#else
+#define VKQUAKE_PREF_DIR "vkQuake"
+#endif
 #define SCREENSHOT_PREFIX "vkQuake"
 
 #define GAMENAME "id1" // directory to look in by default

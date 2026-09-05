@@ -2418,7 +2418,7 @@ void LOG_Init (quakeparms_t *parms)
 
 	inittime = time (NULL);
 	strftime (session, sizeof (session), "%m/%d/%Y %H:%M:%S", localtime (&inittime));
-	char *pref_path = SDL_GetPrefPath ("vkQuake", "");
+	char *pref_path = SDL_GetPrefPath (VKQUAKE_PREF_DIR, "");
 	if (pref_path)
 	{
 		q_snprintf (logfilename, sizeof (logfilename), "%sqconsole.log", pref_path);

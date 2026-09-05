@@ -20,8 +20,9 @@ Dimension of the Machine) loading without extra setup.
    are present you are asked which to play; `-prefremaster` on the command line skips the question.
 3. On displays taller than 1440p a one-time prompt offers to render at 1440p for better frame rates.
 
-Config, saves and the console log now live in `%APPDATA%\vkQuake\` (shared with vanilla vkQuake 1.36), not
-next to the executable. Add `-condebug` to write `qconsole.log` there.
+Config, saves and the console log now live in `%APPDATA%\QuakeRT\` (vanilla vkQuake 1.36 uses
+`%APPDATA%\vkQuake\`, so the two builds keep separate settings), not next to the executable. Add `-condebug`
+to write `qconsole.log` there.
 
 ### Steam achievements
 

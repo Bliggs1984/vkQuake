@@ -2991,7 +2991,7 @@ Opens a file in the per-user preferences directory
 */
 FILE *COM_FOpenPrefFile (const char *filename, const char *mode)
 {
-	char *pref_path = SDL_GetPrefPath ("", "vkQuake");
+	char *pref_path = SDL_GetPrefPath ("", VKQUAKE_PREF_DIR);
 	FILE *f = Sys_fopen (va ("%s/%s", pref_path, filename), mode);
 	SDL_free (pref_path);
 	return f;
@@ -3050,7 +3050,7 @@ qboolean COM_GetLegacySaveDir (char *dst, size_t dstsize)
 	if (!multiuser)
 		return false;
 
-	pref_root = SDL_GetPrefPath ("", "vkQuake");
+	pref_root = SDL_GetPrefPath ("", VKQUAKE_PREF_DIR);
 	if (!pref_root)
 		return false;
 
@@ -3080,7 +3080,7 @@ static void COM_SetUserPrefDir (void)
 
 	if (host_parms->userdir != host_parms->basedir)
 		return;
-	pref_path = SDL_GetPrefPath ("", "vkQuake");
+	pref_path = SDL_GetPrefPath ("", VKQUAKE_PREF_DIR);
 	if (!pref_path)
 		return;
 

@@ -1704,7 +1704,9 @@ void VID_Init (void)
 
 #if RT_RENDERER
 #if defined(_WIN32)
-	if (CVAR_TO_BOOL (_rt_firsttime))
+	// skip the prompt when the mode was given explicitly on the command line (also keeps automated runs unattended)
+	const qboolean explicit_mode = COM_CheckParm ("-window") || COM_CheckParm ("-width") || COM_CheckParm ("-height") || COM_CheckParm ("-fullscreen");
+	if (CVAR_TO_BOOL (_rt_firsttime) && !explicit_mode)
 	{
 		if (!fullscreen)
 		{
