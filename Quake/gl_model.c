@@ -38,6 +38,7 @@ static void		 Mod_FreeModelMemory (qmodel_t *mod);
 // RT renderer: material defaults for textures loaded here (defined in rt_gl_vidsdl.c / rt_gl_texmgr.c).
 extern cvar_t rt_brush_rough, rt_brush_metal;
 extern cvar_t rt_model_rough, rt_model_metal;
+extern cvar_t rt_enable_pvs; // 0 (default) = no PVS at all: leafs get no vis data, so the server sends every entity and water vis is trivially "all transparent"
 void		  TexMgr_RT_SpecialStart (float default_rough, float default_metallic);
 void		  TexMgr_RT_SpecialEnd (void);
 #endif
@@ -2281,7 +2282,11 @@ static void Mod_ProcessLeafs_S (qmodel_t *mod, byte *in, int filelen)
 		out->nummarksurfaces = (unsigned short)ReadShortUnaligned (in + offsetof (dsleaf_t, nummarksurfaces));	 // johnfitz -- unsigned short
 
 		p = ReadLongUnaligned (in + offsetof (dsleaf_t, visofs));
+#ifdef RT_RENDERER
+		if (p == -1 || !CVAR_TO_BOOL (rt_enable_pvs)) // RT: no vis data -> Mod_LeafPVS returns mod_novis (everything visible)
+#else
 		if (p == -1)
+#endif
 			out->compressed_vis = NULL;
 		else
 			out->compressed_vis = (mod->visdata != NULL) ? (mod->visdata + p) : NULL;
@@ -2324,7 +2329,11 @@ static void Mod_ProcessLeafs_L1 (qmodel_t *mod, byte *in, int filelen)
 		out->nummarksurfaces = ReadLongUnaligned (in + offsetof (dl1leaf_t, nummarksurfaces));						 // johnfitz -- unsigned short
 
 		p = ReadLongUnaligned (in + offsetof (dl1leaf_t, visofs));
+#ifdef RT_RENDERER
+		if (p == -1 || !CVAR_TO_BOOL (rt_enable_pvs)) // RT: see Mod_ProcessLeafs_S
+#else
 		if (p == -1)
+#endif
 			out->compressed_vis = NULL;
 		else
 			out->compressed_vis = mod->visdata + p;
@@ -2367,7 +2376,11 @@ static void Mod_ProcessLeafs_L2 (qmodel_t *mod, byte *in, int filelen)
 		out->nummarksurfaces = ReadLongUnaligned (in + offsetof (dl2leaf_t, nummarksurfaces));						 // johnfitz -- unsigned short
 
 		p = ReadLongUnaligned (in + offsetof (dl2leaf_t, visofs));
+#ifdef RT_RENDERER
+		if (p == -1 || !CVAR_TO_BOOL (rt_enable_pvs)) // RT: see Mod_ProcessLeafs_S
+#else
 		if (p == -1)
+#endif
 			out->compressed_vis = NULL;
 		else
 			out->compressed_vis = mod->visdata + p;
@@ -2413,13 +2426,15 @@ static void Mod_CheckWaterVis (qmodel_t *mod)
 	int			contenttype;
 	unsigned	hascontents = 0;
 
-#ifndef RT_RENDERER // r_novis is a vanilla-renderer cvar (gl_rmain.c); RT has no equivalent
+#ifdef RT_RENDERER // r_novis is a vanilla-renderer cvar (gl_rmain.c); RT uses rt_enable_pvs (2022 fork)
+	if (!CVAR_TO_BOOL (rt_enable_pvs))
+#else
 	if (r_novis.value)
+#endif
 	{ // all can be
 		mod->contentstransparent = (SURF_DRAWWATER | SURF_DRAWTELE | SURF_DRAWSLIME | SURF_DRAWLAVA);
 		return;
 	}
-#endif
 
 	// pvs is 1-based. leaf 0 sees all (the solid leaf).
 	// leaf 0 has no pvs, and does not appear in other leafs either, so watch out for the biases.

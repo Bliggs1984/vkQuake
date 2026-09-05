@@ -97,7 +97,11 @@ cvar_t scr_autoclock = {"scr_autoclock", "1", CVAR_ARCHIVE};
 cvar_t scr_usekfont = {"scr_usekfont", "0", CVAR_NONE}; // 2021 re-release
 cvar_t scr_style = {"scr_style", "0", CVAR_ARCHIVE_GAME};
 
+#ifdef RT_RENDERER
+cvar_t scr_viewsize = {"viewsize", "110", CVAR_ARCHIVE_GAME}; // RT: default to the reduced HUD (modernise-2026)
+#else
 cvar_t scr_viewsize = {"viewsize", "100", CVAR_ARCHIVE_GAME};
+#endif
 cvar_t scr_viewsize_allow_shrinking = {"viewsize_allow_shrinking", "0", CVAR_ARCHIVE_GAME};
 cvar_t scr_fov = {"fov", "90", CVAR_ARCHIVE_GAME}; // 10 - 170
 cvar_t scr_fov_adapt = {"fov_adapt", "1", CVAR_ARCHIVE_GAME};
@@ -382,8 +386,14 @@ static void SCR_CalcRefdef (void)
 	float zoom;
 
 	// bound viewsize
+#ifdef RT_RENDERER
+	// RT: RTGL1 always renders the full frame; viewsize < 100 (bordered view) is not supported
+	if (scr_viewsize.value < 100)
+		Cvar_SetQuick (&scr_viewsize, "100");
+#else
 	if (scr_viewsize.value < 30)
 		Cvar_SetQuick (&scr_viewsize, "30");
+#endif
 	if (scr_viewsize.value > 130)
 		Cvar_SetQuick (&scr_viewsize, "130");
 
@@ -439,7 +449,9 @@ Keybinding command
 */
 static void SCR_SizeUp_f (void)
 {
+#ifndef RT_RENDERER // RT: viewsize is driven by the HUD option (viewsize + rt_hud_minimal), sizeup/sizedown are no-ops
 	Cvar_SetValueQuick (&scr_viewsize, scr_viewsize.value + 10);
+#endif
 }
 
 /*
@@ -451,10 +463,12 @@ Keybinding command
 */
 static void SCR_SizeDown_f (void)
 {
+#ifndef RT_RENDERER
 	float new_value = scr_viewsize.value - 10;
 	if (!scr_viewsize_allow_shrinking.value)
 		new_value = q_max (new_value, 100);
 	Cvar_SetValueQuick (&scr_viewsize, new_value);
+#endif
 }
 
 static void SCR_Callback_refdef (cvar_t *var)

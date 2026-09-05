@@ -321,9 +321,11 @@ void        Sky_LoadSkyBox (const char *name)
 Sky_GetSkyCommand / Sky_SetSkyfog -- 1.36 demo/savegame hooks (see cl_demo.c, host_cmd.c)
 =================
 */
+static char skybox_name_worldspawn[1024]; // 1.36: sky set by worldspawn, so demos only record a user "sky" change
+
 const char *Sky_GetSkyCommand (qboolean always)
 {
-	qboolean need_sky = always || skybox_name[0];
+	qboolean need_sky = always || strcmp (skybox_name, skybox_name_worldspawn); // 1.36: only when changed from worldspawn
 	qboolean need_skyfog = always; // no safe way to record skyfog in demos; r_skyfog is user pref
 
 	if (need_sky || need_skyfog)
@@ -334,7 +336,7 @@ const char *Sky_GetSkyCommand (qboolean always)
 		q_strlcpy (fog, va ("skyfog %g", skyfog), sizeof (fog));
 		return va ("\n%s%s%s\n", need_sky ? sky : "", need_sky && need_skyfog ? "\n" : "", need_skyfog ? fog : "");
 	}
-	return "";
+	return NULL; // 1.36: callers test for NULL (cl_demo.c) and index [1] (host_cmd.c), "" would be read past its end
 }
 
 void Sky_SetSkyfog (float value)
@@ -354,11 +356,15 @@ void Sky_ClearAll (void)
 	int i;
 
 	skybox_name[0] = 0;
+	skybox_name_worldspawn[0] = 0;
 	for (i = 0; i < 6; i++)
 		skybox_textures[i] = NULL;
 	solidskytexture = NULL;
 	alphaskytexture = NULL;
 	max_skytexture_index = -1;
+
+	// 1.36: demo playback stuffs "skyfog x" as a console command (sets the cvar); drop it on map unload/game change
+	Cvar_SetQuick (&r_skyfog, r_skyfog.default_string);
 }
 
 /*
@@ -399,7 +405,7 @@ void Sky_NewMap (void)
 			q_strlcpy (key, com_token, sizeof (key));
 		while (key[0] && key[strlen (key) - 1] == ' ') // remove trailing spaces
 			key[strlen (key) - 1] = 0;
-		data = COM_Parse (data);
+		data = COM_ParseEx (data, CPE_ALLOWTRUNC); // 1.36: an overlong worldspawn value (editor keys) must not abort the parse
 		if (!data)
 			return; // error
 		q_strlcpy (value, com_token, sizeof (value));
@@ -417,6 +423,8 @@ void Sky_NewMap (void)
 			Sky_LoadSkyBox (value);
 #endif
 	}
+
+	q_strlcpy (skybox_name_worldspawn, skybox_name, sizeof (skybox_name_worldspawn)); // 1.36
 }
 
 /*

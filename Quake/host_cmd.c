@@ -715,6 +715,12 @@ static void Modlist_AddRoot (const char *base)
 			continue;
 		if (!q_strcasecmp (COM_FileGetExtension (find->name), "app")) // skip .app bundles on macOS
 			continue;
+#ifdef RT_RENDERER
+		// RT: the RTGL1 override folder (shaders, ktx2 textures) is not a mod
+		assert (!strcmp ("ovrd/", RT_OVERRIDEN_FOLDER));
+		if (!strcmp (find->name, "ovrd"))
+			continue;
+#endif
 		Modlist_Add (base, find->name);
 	}
 }

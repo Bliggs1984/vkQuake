@@ -69,6 +69,10 @@ entity_t **cl_visedicts_alpha;
 extern cvar_t r_lerpmodels, r_lerpmove; // johnfitz
 extern cvar_t r_lerpturn;				// Danni
 extern float  host_netinterval;			// Spike
+#ifdef RT_RENDERER
+extern cvar_t rt_muzzleoffs_x, rt_muzzleoffs_y, rt_muzzleoffs_z; // RT: first-person muzzle flash light offset (rt_gl_vidsdl.c)
+extern cvar_t rt_classic_render;
+#endif
 
 qboolean needs_relink;
 
@@ -377,7 +381,11 @@ dlight_t *CL_AllocDlight (int key)
 			{
 				memset (dl, 0, sizeof (*dl));
 				dl->key = key;
+#ifdef RT_RENDERER
+				RT_INIT_DEFAULT_LIGHT_COLOR (dl->color); // RT: rt_globallight_r/g/b
+#else
 				dl->color[0] = dl->color[1] = dl->color[2] = 1; // johnfitz -- lit support via lordhavoc
+#endif
 				dl->cone_cos = -2.0f;
 				dl->kex_intensity = 0.0f;
 				return dl;
@@ -393,7 +401,11 @@ dlight_t *CL_AllocDlight (int key)
 		{
 			memset (dl, 0, sizeof (*dl));
 			dl->key = key;
+#ifdef RT_RENDERER
+			RT_INIT_DEFAULT_LIGHT_COLOR (dl->color); // RT: rt_globallight_r/g/b
+#else
 			dl->color[0] = dl->color[1] = dl->color[2] = 1; // johnfitz -- lit support via lordhavoc
+#endif
 			dl->cone_cos = -2.0f;
 			dl->kex_intensity = 0.0f;
 			return dl;
@@ -403,7 +415,11 @@ dlight_t *CL_AllocDlight (int key)
 	dl = &cl_dlights[0];
 	memset (dl, 0, sizeof (*dl));
 	dl->key = key;
+#ifdef RT_RENDERER
+	RT_INIT_DEFAULT_LIGHT_COLOR (dl->color); // RT: rt_globallight_r/g/b
+#else
 	dl->color[0] = dl->color[1] = dl->color[2] = 1; // johnfitz -- lit support via lordhavoc
+#endif
 	dl->cone_cos = -2.0f;
 	return dl;
 }
@@ -642,6 +658,59 @@ static void CL_RocketTrail (entity_t *ent, int type)
 	VectorCopy (ent->origin, ent->trailorg);
 }
 
+#ifdef RT_RENDERER
+/*
+===============
+RT_OffsetFromCamera
+
+RT: place a first-person light at a camera-relative offset (right/up/forward), pulled back
+towards the camera when a wall is in the way so the light doesn't leak through geometry.
+===============
+*/
+static void RT_OffsetFromCamera (vec3_t out_position, float offset_right, float offset_up, float offset_forward)
+{
+	// start with camera position
+	VectorCopy (r_origin, out_position);
+
+	// set desired position
+	VectorMA (out_position, offset_right, vright, out_position);
+	VectorMA (out_position, offset_up, vup, out_position);
+	VectorMA (out_position, offset_forward, vpn, out_position);
+
+	vec3_t tolight;
+	VectorSubtract (out_position, r_origin, tolight);
+	const float len = VectorLength (tolight);
+
+	if (len > 0.01f)
+	{
+		const float fraction = 0.7f;
+
+		VectorScale (tolight, 1.0f / len, tolight);
+
+		vec3_t end;
+		VectorMA (r_origin, len / fraction, tolight, end);
+
+		// trace line, if hit something, smoothly offset to camera
+		vec3_t hitpoint;
+		TraceLine (r_origin, end, hitpoint);
+
+		vec3_t delta;
+		VectorSubtract (hitpoint, r_origin, delta);
+		float disttoend = CLAMP (0.0f, VectorLength (delta), len / fraction);
+
+		VectorMA (r_origin, fraction * disttoend, tolight, out_position);
+	}
+}
+
+// RT: the player's own body is submitted to RTGL1 (see the viewentity skip below), so its
+// EF_*LIGHT lights are moved out of the model to a camera-relative point.
+#define RT_OFFSET_LIGHT(dlightdst)                                                                                                    \
+	if (ent == &cl.entities[cl.viewentity])                                                                                           \
+	{                                                                                                                                 \
+		RT_OffsetFromCamera ((dlightdst)->origin, METRIC_TO_QUAKEUNIT (-0.25f), METRIC_TO_QUAKEUNIT (-0.4f), METRIC_TO_QUAKEUNIT (2.0f)); \
+	}
+#endif
+
 /*
 ===============
 CL_RelinkEntities
@@ -763,6 +832,22 @@ void CL_RelinkEntities (void)
 
 		if (ent->effects & EF_MUZZLEFLASH)
 		{
+#ifdef RT_RENDERER
+			dl = CL_AllocDlight (i);
+			if (ent == &cl.entities[cl.viewentity])
+			{
+				// RT: first-person muzzle flash sits at a tunable camera-relative offset
+				RT_OffsetFromCamera (dl->origin, CVAR_TO_FLOAT (rt_muzzleoffs_x), CVAR_TO_FLOAT (rt_muzzleoffs_y), CVAR_TO_FLOAT (rt_muzzleoffs_z));
+			}
+			else
+			{
+				vec3_t fv, rv, uv;
+				VectorCopy (ent->origin, dl->origin);
+				dl->origin[2] += 16;
+				AngleVectors (ent->angles, fv, rv, uv);
+				VectorMA (dl->origin, 18, fv, dl->origin);
+			}
+#else
 			vec3_t fv, rv, uv;
 
 			dl = CL_AllocDlight (i);
@@ -771,6 +856,7 @@ void CL_RelinkEntities (void)
 			AngleVectors (ent->angles, fv, rv, uv);
 
 			VectorMA (dl->origin, 18, fv, dl->origin);
+#endif
 			dl->radius = 200 + (COM_Rand () & 31);
 			dl->minlight = 32;
 			dl->die = cl.time + 0.1;
@@ -811,6 +897,9 @@ void CL_RelinkEntities (void)
 			dl->origin[2] += 16;
 			dl->radius = 400 + (COM_Rand () & 31);
 			dl->die = cl.time + 0.001;
+#ifdef RT_RENDERER
+			RT_OFFSET_LIGHT (dl)
+#endif
 		}
 		if (ent->effects & EF_DIMLIGHT)
 		{
@@ -818,6 +907,9 @@ void CL_RelinkEntities (void)
 			VectorCopy (ent->origin, dl->origin);
 			dl->radius = 200 + (COM_Rand () & 31);
 			dl->die = cl.time + 0.001;
+#ifdef RT_RENDERER
+			RT_OFFSET_LIGHT (dl)
+#endif
 		}
 		if (ent->effects & EF_QEX_QUADLIGHT)
 		{
@@ -825,9 +917,16 @@ void CL_RelinkEntities (void)
 			VectorCopy (ent->origin, dl->origin);
 			dl->radius = 200 + (COM_Rand () & 31);
 			dl->die = cl.time + 0.001;
+#ifdef RT_RENDERER
+			dl->color[0] = 0.7f; // RT: paler tint, RTGL1 lights are much stronger than lightmap dlights
+			dl->color[1] = 0.7f;
+			dl->color[2] = 1.0f;
+			RT_OFFSET_LIGHT (dl)
+#else
 			dl->color[0] = 0.25f;
 			dl->color[1] = 0.25f;
 			dl->color[2] = 1.0f;
+#endif
 		}
 		if (ent->effects & EF_QEX_PENTALIGHT)
 		{
@@ -835,9 +934,16 @@ void CL_RelinkEntities (void)
 			VectorCopy (ent->origin, dl->origin);
 			dl->radius = 200 + (COM_Rand () & 31);
 			dl->die = cl.time + 0.001;
+#ifdef RT_RENDERER
+			dl->color[0] = 1.0f;
+			dl->color[1] = 0.7f; // RT: paler tint, see EF_QEX_QUADLIGHT
+			dl->color[2] = 0.7f;
+			RT_OFFSET_LIGHT (dl)
+#else
 			dl->color[0] = 1.0f;
 			dl->color[1] = 0.25f;
 			dl->color[2] = 0.25f;
+#endif
 		}
 
 #ifdef PSET_SCRIPT
@@ -883,10 +989,21 @@ void CL_RelinkEntities (void)
 		{
 			if (PScript_EntParticleTrail (oldorg, ent, "TR_ROCKET"))
 				CL_RocketTrail (ent, 0);
+#ifdef RT_RENDERER
+			// RT: the rocket glow comes from the model's emissive material; only classic mode wants the dlight
+			if (CVAR_TO_BOOL (rt_classic_render))
+			{
+				dl = CL_AllocDlight (i);
+				VectorCopy (ent->origin, dl->origin);
+				dl->radius = 200;
+				dl->die = cl.time + 0.01;
+			}
+#else
 			dl = CL_AllocDlight (i);
 			VectorCopy (ent->origin, dl->origin);
 			dl->radius = 200;
 			dl->die = cl.time + 0.01;
+#endif
 		}
 		else if (ent->model->flags & EF_GRENADE)
 		{
@@ -927,8 +1044,10 @@ void CL_RelinkEntities (void)
 		}
 #endif
 
+#ifndef RT_RENDERER // RT: keep the viewer; rt_r_alias.c submits it as FIRST_PERSON_VIEWER (shadows/reflections only)
 		if (i == cl.viewentity && !chase_active.value)
 			continue;
+#endif
 
 		if (cl_numvisedicts < cl_maxvisedicts)
 		{

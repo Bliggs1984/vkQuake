@@ -76,7 +76,12 @@ cvar_t gl_cshiftpercent_damage = {"gl_cshiftpercent_damage", "100", CVAR_NONE};	
 cvar_t gl_cshiftpercent_bonus = {"gl_cshiftpercent_bonus", "100", CVAR_NONE};		// QuakeSpasm
 cvar_t gl_cshiftpercent_powerup = {"gl_cshiftpercent_powerup", "100", CVAR_NONE};	// QuakeSpasm
 
+#ifdef RT_RENDERER
+cvar_t r_viewmodel_quake = {"r_viewmodel_quake", "1", CVAR_ARCHIVE_GAME}; // RT: fork default (on), see V_CalcRefdef
+extern cvar_t rt_hud_minimal;
+#else
 cvar_t r_viewmodel_quake = {"r_viewmodel_quake", "0", CVAR_ARCHIVE_GAME};
+#endif
 
 extern int in_forward, in_forward2, in_back;
 
@@ -785,6 +790,23 @@ void V_CalcRefdef (void)
 		view->origin[i] += forward[i] * bob * 0.4;
 	view->origin[2] += bob;
 
+#ifdef RT_RENDERER
+	// RT: the fork's viewmodel placement (raised along vup so the gun sits higher in the ray-traced frame)
+	if (CVAR_TO_BOOL (r_viewmodel_quake))
+	{
+		VectorMA (view->origin, 1.5f, vup, view->origin);
+		view->origin[2] += 0.5f;
+
+		if (scr_viewsize.value == 110 && !CVAR_TO_BOOL (rt_hud_minimal))
+		{
+			view->origin[2] += 0.5f;
+		}
+		else if (scr_viewsize.value == 100)
+		{
+			view->origin[2] += 1;
+		}
+	}
+#else
 	// johnfitz -- removed all gun position fudging code (was used to keep gun from getting covered by sbar)
 	// MarkV -- restored this with r_viewmodel_quake cvar
 	if (r_viewmodel_quake.value)
@@ -798,6 +820,7 @@ void V_CalcRefdef (void)
 		else if (scr_viewsize.value == 80)
 			view->origin[2] += 0.5;
 	}
+#endif
 
 	view->lerp.frame_finish_time = ent->lerp.frame_finish_time;
 

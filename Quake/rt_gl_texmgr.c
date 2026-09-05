@@ -397,6 +397,7 @@ static void TexMgr_Imagelist_f (void)
 	float        texels = 0;
 	gltexture_t *glt;
 
+	SDL_LockMutex (texmgr_mutex); // 1.36: the list is mutated by texture-load task workers
 	for (glt = active_gltextures; glt; glt = glt->next)
 	{
 		Con_SafePrintf ("   %4i x%4i %s\n", glt->width, glt->height, glt->name);
@@ -405,6 +406,7 @@ static void TexMgr_Imagelist_f (void)
 		else
 			texels += (glt->width * glt->height);
 	}
+	SDL_UnlockMutex (texmgr_mutex);
 
 	mb = (texels * 4) / 0x100000;
 	Con_Printf ("%i textures %i pixels %1.1f megabytes\n", numgltextures, (int)texels, mb);
@@ -732,8 +734,8 @@ static unsigned *TexMgr_Downsample (unsigned *data, int in_width, int in_height,
 {
 	const int out_size_bytes = out_width * out_height * 4;
 
-	assert ((out_width >= 1) && (out_width < in_width));
-	assert ((out_height >= 1) && (out_height < in_height));
+	assert ((out_width >= 1) && (out_width <= in_width));   // 1.36: picmip/maxsize can leave one axis unchanged
+	assert ((out_height >= 1) && (out_height <= in_height));
 
 	TEMP_ALLOC (byte, image_resize_buffer, out_size_bytes);
 	stbir_resize_uint8 ((byte *)data, in_width, in_height, 0, image_resize_buffer, out_width, out_height, 0, 4);
@@ -1011,12 +1013,11 @@ static void TexMgr_LoadImage32 (gltexture_t *glt, unsigned *data)
 TexMgr_LoadImage8 -- handles 8bit source data, then passes it to LoadImage32
 ================
 */
-static void TexMgr_LoadImage8 (gltexture_t *glt, byte *data)
+static void TexMgr_LoadImage8 (gltexture_t *glt, byte *data, unsigned int *usepal) // 1.36: usepal != NULL for embedded (WAD3/Valve) palettes
 {
 	GL_DeleteTexture (glt);
 
 	extern cvar_t gl_fullbrights;
-	unsigned int *usepal;
 	int           i;
 
 	// HACK HACK HACK -- taken from tomazquake
@@ -1039,7 +1040,11 @@ static void TexMgr_LoadImage8 (gltexture_t *glt, byte *data)
 	}
 
 	// choose palette and padbyte
-	if (glt->flags & TEXPREF_FULLBRIGHT)
+	if (usepal)
+	{
+		// 1.36: caller-supplied (embedded) palette
+	}
+	else if (glt->flags & TEXPREF_FULLBRIGHT)
 	{
 		if (glt->flags & TEXPREF_ALPHA)
 			usepal = d_8to24table_fbright_fence;
@@ -1079,6 +1084,49 @@ static void TexMgr_LoadImage8 (gltexture_t *glt, byte *data)
 }
 
 /*
+=================
+TexMgr_LoadMiptexPalette -- 1.36: convert a 24bit embedded (WAD3/Valve) palette to 32bit.
+The RT build has no nobright/fullbright split tables, so the palette is used as-is.
+=================
+*/
+static void TexMgr_LoadMiptexPalette (byte *in, byte *out, int numcolors)
+{
+	int i;
+
+	for (i = 0; i < numcolors; i++)
+	{
+		*out++ = *in++;
+		*out++ = *in++;
+		*out++ = *in++;
+		*out++ = 255;
+	}
+}
+
+/*
+================
+TexMgr_LoadImage8Valve -- 1.36: 8bit data followed by a 16bit colour count and a 24bit palette (SRC_INDEXED_PALETTE).
+gl_model.c (shared) passes this format for WAD3 textures; without a case for it the RT special-texture
+bookkeeping (TexMgr_RT_SpecialSave/End) was never run and dereferenced NULL.
+================
+*/
+static void TexMgr_LoadImage8Valve (gltexture_t *glt, byte *data)
+{
+	byte          *in;
+	unsigned short colors;
+
+	in = data + glt->source_width * glt->source_height / 64 * 85;
+
+	memcpy (&colors, in, 2);
+	colors = LittleShort (colors);
+
+	TEMP_ALLOC (byte, usepal, 256 * 4);
+	memset (usepal, 0, 256 * 4);
+	TexMgr_LoadMiptexPalette (in + 2, usepal, q_min (colors, 256));
+	TexMgr_LoadImage8 (glt, data, (unsigned *)usepal);
+	TEMP_FREE (usepal);
+}
+
+/*
 ================
 TexMgr_LoadLightmap -- handles lightmap data
 ================
@@ -1111,6 +1159,7 @@ gltexture_t *TexMgr_LoadImage (
 		switch (format)
 		{
 		case SRC_INDEXED:
+		case SRC_INDEXED_PALETTE: // 1.36
 			crc = CRC_Block (data, width * height);
 			break;
 		case SRC_LIGHTMAP:
@@ -1133,6 +1182,7 @@ gltexture_t *TexMgr_LoadImage (
 	// copy data
 	glt->owner = owner;
 	q_strlcpy (glt->name, name, sizeof (glt->name));
+	glt->path_id = (glt->owner ? glt->owner->path_id : 0); // 1.36: else a recycled free-list entry keeps a stale id
 	glt->width = width;
 	glt->height = height;
 	glt->flags = flags;
@@ -1158,7 +1208,10 @@ gltexture_t *TexMgr_LoadImage (
 	switch (glt->source_format)
 	{
 	case SRC_INDEXED:
-		TexMgr_LoadImage8 (glt, data);
+		TexMgr_LoadImage8 (glt, data, NULL);
+		break;
+	case SRC_INDEXED_PALETTE: // 1.36: WAD3 / Valve-palette textures
+		TexMgr_LoadImage8Valve (glt, data);
 		break;
 	case SRC_LIGHTMAP:
 		TexMgr_LoadLightmap (glt, data);
@@ -1203,7 +1256,7 @@ void TexMgr_ReloadImage (gltexture_t *glt, int shirt, int pants)
 		COM_FOpenFile (glt->source_file, &f, NULL);
 		if (!f)
 			goto invalid;
-		fseek (f, glt->source_offset, SEEK_CUR);
+		Sys_fseek (f, glt->source_offset, SEEK_CUR); // 1.36: 64-bit offsets
 		size = glt->source_width * glt->source_height;
 		/* should be SRC_INDEXED, but no harm being paranoid:  */
 		if (glt->source_format == SRC_RGBA)
@@ -1221,7 +1274,10 @@ void TexMgr_ReloadImage (gltexture_t *glt, int shirt, int pants)
 	}
 	else if (glt->source_file[0] && !glt->source_offset)
 	{
-		{ enum srcformat imgfmt_unused; allocated = data = Image_LoadImage (glt->source_file, (int *)&glt->source_width, (int *)&glt->source_height, &imgfmt_unused, 0); } // simple file
+		// 1.36: the loader reports the real format (a .png replacing a .lmp) into source_format, which drives the upload switch
+		// below, and the search is limited to the texture's own gamedir
+		allocated = data =
+			Image_LoadImage (glt->source_file, (int *)&glt->source_width, (int *)&glt->source_height, &glt->source_format, glt->path_id); // simple file
 	}
 	else if (!glt->source_file[0] && glt->source_offset)
 	{
@@ -1297,7 +1353,10 @@ void TexMgr_ReloadImage (gltexture_t *glt, int shirt, int pants)
 	switch (glt->source_format)
 	{
 	case SRC_INDEXED:
-		TexMgr_LoadImage8 (glt, data);
+		TexMgr_LoadImage8 (glt, data, NULL);
+		break;
+	case SRC_INDEXED_PALETTE: // 1.36
+		TexMgr_LoadImage8Valve (glt, data);
 		break;
 	case SRC_LIGHTMAP:
 		TexMgr_LoadLightmap (glt, data);
@@ -1376,8 +1435,12 @@ static struct rt_texturecustominfo_s *RT_PushTexCustom (const char *texname, int
 
 static void RT_ParseTextureCustomInfos (void)
 {
+	// 1.36: TexMgr_LoadImage runs on task workers (Mod_LoadTextureTask / Mod_LoadSkinTask); this lazy singleton
+	// must not be built by two workers at once. texmgr_mutex is recursive (SDL), so nesting inside LoadImage is fine.
+	SDL_LockMutex (texmgr_mutex);
 	if (rt_texturecustominfos_count != 0)
 	{
+		SDL_UnlockMutex (texmgr_mutex);
 		return;
 	}
 
@@ -1388,6 +1451,8 @@ static void RT_ParseTextureCustomInfos (void)
     if (f == NULL)
 	{
 		Con_Printf ("Couldn't open %s\n", RT_CUSTOMTEXTUREINFO_PATH);
+		rt_texturecustominfos_count = -1; // 1.36: don't retry (and re-log) on every texture load from every worker
+		SDL_UnlockMutex (texmgr_mutex);
 		return;
 	}
 
@@ -1517,10 +1582,12 @@ static void RT_ParseTextureCustomInfos (void)
 	}
 
 	fclose (f);
+	SDL_UnlockMutex (texmgr_mutex);
 }
 
 static void RT_FillWithTextureCustomInfo (gltexture_t *dst)
 {
+	SDL_LockMutex (texmgr_mutex); // 1.36: called from texture-load task workers
 	for (int i = 0; i < rt_texturecustominfos_count; i++)
 	{
 		if (strcmp (dst->rtname, rt_texturecustominfos[i].rtname) == 0)
@@ -1529,9 +1596,11 @@ static void RT_FillWithTextureCustomInfo (gltexture_t *dst)
 			dst->rtcustomtextype = rt_texturecustominfos[i].type;
 			dst->rtupoffset = rt_texturecustominfos[i].upoffset;
 
+			SDL_UnlockMutex (texmgr_mutex);
 		    return;
 		}
 	}
+	SDL_UnlockMutex (texmgr_mutex);
 
 	dst->rtcustomtextype = RT_CUSTOMTEXTUREINFO_TYPE_NONE;
 }

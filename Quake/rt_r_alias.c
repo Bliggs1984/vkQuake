@@ -159,13 +159,23 @@ GetPoseVertices (const qmodel_t *m, const aliashdr_t *hdr, int pose1, int pose2,
 	return tempstorage;
 }
 
-static RgTransform RT_GetAliasModelTransform (const aliashdr_t *paliashdr, lerpdata_t *lerpdata, qboolean isfirstperson)
+static RgTransform RT_GetAliasModelTransform (const entity_t *e, const aliashdr_t *paliashdr, lerpdata_t *lerpdata, qboolean isfirstperson)
 {
 	float model_matrix[16];
 	IdentityMatrix (model_matrix);
-	// TODO(rt): 1.36 passes e->netstate.scale (per-entity model scale, 4-arg R_RotateForEntity);
-	// the RT R_RotateForEntity in rt_gl_rmain.c is the 3-arg form, so scale is ignored for now.
 	R_RotateForEntity (model_matrix, lerpdata->origin, lerpdata->angles);
+
+	// 1.36: per-entity model scale (entity_state_t.scale, 4.4 fixed point). Vanilla folds it into the
+	// 4-arg R_RotateForEntity; the RT one is 3-arg, so apply the same uniform scale here.
+	{
+		float entscale = ENTSCALE_DECODE (e->netstate.scale);
+		if (entscale != 1.0f)
+		{
+			float entscale_matrix[16];
+			ScaleMatrix (entscale_matrix, entscale, entscale, entscale);
+			MatrixMultiply (model_matrix, entscale_matrix);
+		}
+	}
 
 	float fovscalex = 1.0f;
 	float fovscaley = 1.0f;
@@ -248,7 +258,7 @@ static void GL_DrawAliasFrame (
 			.pVertices = GetPoseVertices (e->model, paliashdr, lerpdata.pose1, lerpdata.pose2, blend, shadevector, lightcolor),
 			.indexCount = paliashdr->numindexes,
 			.pIndices = e->model->rtindices,
-			.transform = RT_GetAliasModelTransform (paliashdr, &lerpdata, isfirstperson),
+			.transform = RT_GetAliasModelTransform (e, paliashdr, &lerpdata, isfirstperson),
 			.color = RT_COLOR_WHITE,
 			.material = tx ? tx->rtmaterial : RG_NO_MATERIAL,
 			.pipelineState = RG_RASTERIZED_GEOMETRY_STATE_DEPTH_TEST | RG_RASTERIZED_GEOMETRY_STATE_DEPTH_WRITE,
@@ -292,7 +302,7 @@ static void GL_DrawAliasFrame (
 			.defaultRoughness = CVAR_TO_FLOAT (rt_model_rough),
 			.defaultMetallicity = CVAR_TO_FLOAT (rt_model_metal),
 			.defaultEmission = 0,
-			.transform = RT_GetAliasModelTransform (paliashdr, &lerpdata, isfirstperson),
+			.transform = RT_GetAliasModelTransform (e, paliashdr, &lerpdata, isfirstperson),
 		};
 
 		RgResult r = rgUploadGeometry (vulkan_globals.instance, &info);
@@ -599,8 +609,8 @@ void R_DrawAliasModel (cb_context_t *cbx, entity_t *e, int entuniqueid)
 	}
 	tx = paliashdr->gltextures[skinnum][anim];
 	if (e->colormap != vid.colormap && !gl_nocolors.value)
-		if ((uintptr_t)e >= (uintptr_t)&cl.entities[1] && (uintptr_t)e <= (uintptr_t)&cl.entities[cl.maxclients])
-			tx = playertextures[e - cl.entities - 1];
+		if ((uintptr_t)e >= (uintptr_t)&cl.entities[1] && (uintptr_t)e <= (uintptr_t)&cl.entities[cl.maxclients] && playertextures[e - cl.entities - 1])
+			tx = playertextures[e - cl.entities - 1]; // 1.36: NULL when the player skin could not be recolored (non-indexed); keep the model skin
 
 	if (r_fullbright_cheatsafe)
 	{

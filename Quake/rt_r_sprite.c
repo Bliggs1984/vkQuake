@@ -54,6 +54,20 @@ static mspriteframe_t *R_GetSpriteFrame (entity_t *currentent)
 	{
 		pspriteframe = psprite->frames[frame].frameptr;
 	}
+	else if (psprite->frames[frame].type == SPR_ANGLED)
+	{
+		// 1.36: 8-way angled sprites (FTEQW backport); the group holds one frame per view direction,
+		// not an animation, so pick by angle instead of falling through to the interval lookup
+		vec3_t axis[3];
+		AngleVectors (currentent->angles, axis[0], axis[1], axis[2]);
+		{
+			float f = DotProduct (vpn, axis[0]);
+			float r = DotProduct (vright, axis[0]);
+			int	  dir = (atan2 (r, f) + 1.125 * M_PI) * (4 / M_PI);
+			pspritegroup = (mspritegroup_t *)psprite->frames[frame].frameptr;
+			pspriteframe = pspritegroup->frames[dir & 7];
+		}
+	}
 	else
 	{
 		pspritegroup = (mspritegroup_t *)psprite->frames[frame].frameptr;
@@ -90,6 +104,7 @@ static void R_CreateSpriteVertices (entity_t *e, mspriteframe_t *frame, RgVertex
 	msprite_t *psprite;
 	float     *s_up, *s_right;
 	float      angle, sr, cr;
+	float      scale = ENTSCALE_DECODE (e->netstate.scale); // 1.36: per-entity scale (4.4 fixed point, 16 = 1.0)
 
 	psprite = (msprite_t *)Mod_Extradata (e->model);
 
@@ -99,8 +114,11 @@ static void R_CreateSpriteVertices (entity_t *e, mspriteframe_t *frame, RgVertex
 		v_up[0] = 0;
 		v_up[1] = 0;
 		v_up[2] = 1;
+		// 1.36: right axis is derived from the view direction so the quad stays a rectangle when looking up/down
+		CrossProduct (vpn, v_up, v_right);
+		VectorNormalizeFast (v_right);
 		s_up = v_up;
-		s_right = vright;
+		s_right = v_right;
 		break;
 	case SPR_FACING_UPRIGHT: // faces camera origin, up is towards the heavens
 		VectorSubtract (e->origin, r_origin, v_forward);
@@ -141,8 +159,8 @@ static void R_CreateSpriteVertices (entity_t *e, mspriteframe_t *frame, RgVertex
 		return;
 	}
 
-	VectorMA (e->origin, frame->down, s_up, point);
-	VectorMA (point, frame->left, s_right, point);
+	VectorMA (e->origin, frame->down * scale, s_up, point);
+	VectorMA (point, frame->left * scale, s_right, point);
 	vertices[0].position[0] = point[0];
 	vertices[0].position[1] = point[1];
 	vertices[0].position[2] = point[2];
@@ -150,8 +168,8 @@ static void R_CreateSpriteVertices (entity_t *e, mspriteframe_t *frame, RgVertex
 	vertices[0].texCoord[1] = frame->tmax;
 	vertices[0].packedColor = RT_PACKED_COLOR_WHITE;
 
-	VectorMA (e->origin, frame->up, s_up, point);
-	VectorMA (point, frame->left, s_right, point);
+	VectorMA (e->origin, frame->up * scale, s_up, point);
+	VectorMA (point, frame->left * scale, s_right, point);
 	vertices[1].position[0] = point[0];
 	vertices[1].position[1] = point[1];
 	vertices[1].position[2] = point[2];
@@ -159,8 +177,8 @@ static void R_CreateSpriteVertices (entity_t *e, mspriteframe_t *frame, RgVertex
 	vertices[1].texCoord[1] = 0.0f;
 	vertices[1].packedColor = RT_PACKED_COLOR_WHITE;
 
-	VectorMA (e->origin, frame->up, s_up, point);
-	VectorMA (point, frame->right, s_right, point);
+	VectorMA (e->origin, frame->up * scale, s_up, point);
+	VectorMA (point, frame->right * scale, s_right, point);
 	vertices[2].position[0] = point[0];
 	vertices[2].position[1] = point[1];
 	vertices[2].position[2] = point[2];
@@ -168,8 +186,8 @@ static void R_CreateSpriteVertices (entity_t *e, mspriteframe_t *frame, RgVertex
 	vertices[2].texCoord[1] = 0.0f;
 	vertices[2].packedColor = RT_PACKED_COLOR_WHITE;
 
-	VectorMA (e->origin, frame->down, s_up, point);
-	VectorMA (point, frame->right, s_right, point);
+	VectorMA (e->origin, frame->down * scale, s_up, point);
+	VectorMA (point, frame->right * scale, s_right, point);
 	vertices[3].position[0] = point[0];
 	vertices[3].position[1] = point[1];
 	vertices[3].position[2] = point[2];

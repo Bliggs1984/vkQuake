@@ -744,6 +744,17 @@ RgTransform RT_GetBrushModelMatrix (entity_t *e)
 	IdentityMatrix (model_matrix);
 	R_RotateForEntity (model_matrix, e->origin, e_angles);
 
+	// 1.36: per-entity scale (entity_state_t.scale); vanilla applies it inside the 4-arg R_RotateForEntity
+	{
+		float entscale = ENTSCALE_DECODE (e->netstate.scale);
+		if (entscale != 1.0f)
+		{
+			float entscale_matrix[16];
+			ScaleMatrix (entscale_matrix, entscale, entscale, entscale);
+			MatrixMultiply (model_matrix, entscale_matrix);
+		}
+	}
+
 	return RT_GetModelTransform (model_matrix);
 }
 
@@ -1775,7 +1786,7 @@ static struct rt_parsetriggers_result_t ParseTeleportTriggers (void)
 			q_strlcpy (key, com_token, sizeof (key));
 		while (key[0] && key[strlen (key) - 1] == ' ') // remove trailing spaces
 			key[strlen (key) - 1] = 0;
-		data = COM_Parse (data);
+		data = COM_ParseEx (data, CPE_ALLOWTRUNC); // 1.36: overlong values (editor keys) truncate instead of aborting the whole lump
 		if (!data)
 			return result; // error
 		q_strlcpy (value, com_token, sizeof (value));

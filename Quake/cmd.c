@@ -23,6 +23,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // cmd.c -- Quake script command processing module
 
 #include "quakedef.h"
+#ifdef RT_RENDERER
+#include "default_cfg.h" // RT: built-in default.cfg (modernise-2026); see Cmd_Exec_f
+#endif
 
 cvar_t cl_nopext = {"cl_nopext", "0", CVAR_NONE};	 // Spike -- prevent autodetection of protocol extensions, so that servers fall back to only their base
 													 // protocol (without needing to reconfigure the server. Requires reconnect.
@@ -335,6 +338,17 @@ void Cmd_Exec_f (void)
 		Mem_Free (buf);
 		return;
 	}
+#ifdef RT_RENDERER
+	else if (!q_strcasecmp (path, "default.cfg"))
+	{
+		// RT: always use our own default.cfg (default_cfg.h), never the one from vkquake.pak / id1 (modernise-2026)
+		if (cmd_warncmd.value)
+			Con_Printf ("execing %s\n", display_path);
+		Cbuf_InsertText ("\n"); // just in case there was no trailing \n.
+		Cbuf_InsertText (default_cfg);
+		return;
+	}
+#endif
 	else
 		buf = (char *)COM_LoadFile (path, NULL);
 

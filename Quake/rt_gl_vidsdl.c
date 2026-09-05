@@ -621,7 +621,7 @@ void VID_Lock (void)
 
 static void RT_PrintMessage (const char *pMessage, void *pUserData)
 {
-	Con_Warning (pMessage);
+	Con_Warning ("%s", pMessage); // 1.36: Con_Warning is printf-style (FUNC_PRINTF); RTGL1 messages may contain '%'
 }
 
 static void RT_ReloadShaders (void)

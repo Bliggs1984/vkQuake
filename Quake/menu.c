@@ -118,6 +118,9 @@ extern cvar_t scr_fov;
 extern cvar_t scr_showfps;
 extern cvar_t cl_confirmquit;
 extern cvar_t scr_style;
+#ifdef RT_RENDERER
+extern cvar_t rt_hud_minimal; // RT: rt_gl_vidsdl.c; coupled with viewsize by the HUD Detail option (modernise-2026)
+#endif
 extern cvar_t autoload;
 extern cvar_t autofastload;
 extern cvar_t r_rtshadows;
@@ -678,25 +681,37 @@ void M_Menu_Main_f (void)
 	m_state = m_main;
 }
 
+#ifndef RT_RENDERER
 static qpic_t *Get_Menu2 ()
 {
 	qboolean base_game = COM_GetGameNames (false)[0] == 0;
 	// Check if user has actually installed vkquake.pak, otherwise fall back to old menu
 	return (base_game && registered.value) ? Draw_TryCachePic ("gfx/mainmenu2.lmp", TEXPREF_ALPHA | TEXPREF_PAD | TEXPREF_NOPICMIP, PICFLAG_AUTO) : NULL;
 }
+#endif
 
 void M_Main_Draw (cb_context_t *cbx)
 {
 	int		f;
 	qpic_t *p;
+#ifdef RT_RENDERER
+	// RT: the 6-item gfx/mainmenu2.lmp is never used; ovrd/mat/gfx/mainmenu.ktx2 overrides gfx/mainmenu.lmp
+	// with a 5-item picture whose 4th button is 'Mods' (modernise-2026)
+	int main_items = MAIN_ITEMS;
+#else
 	qpic_t *menu2 = Get_Menu2 ();
 	int		main_items = MAIN_ITEMS + (menu2 ? 1 : 0);
+#endif
 
 	M_DrawTransPic (cbx, 16, 4, Draw_CachePic ("gfx/qplaque.lmp"));
 	p = Draw_CachePic ("gfx/ttl_main.lmp");
 	M_DrawPic (cbx, (320 - p->width) / 2, 4, p);
 
+#ifdef RT_RENDERER
+	M_DrawTransPic (cbx, 72, 32, Draw_CachePic ("gfx/mainmenu.lmp"));
+#else
 	M_DrawTransPic (cbx, 72, 32, menu2 ? menu2 : Draw_CachePic ("gfx/mainmenu.lmp"));
+#endif
 
 	f = (int)(realtime * 10) % 6;
 
@@ -706,7 +721,9 @@ void M_Main_Draw (cb_context_t *cbx)
 
 void M_Main_Key (int key)
 {
+#ifndef RT_RENDERER
 	qpic_t *menu2 = Get_Menu2 ();
+#endif
 
 	switch (key)
 	{
@@ -725,14 +742,22 @@ void M_Main_Key (int key)
 
 	case K_DOWNARROW:
 		S_LocalSound ("misc/menu1.wav");
+#ifdef RT_RENDERER
+		if (++m_main_cursor >= MAIN_ITEMS)
+#else
 		if (++m_main_cursor >= (MAIN_ITEMS + (menu2 ? 1 : 0)))
+#endif
 			m_main_cursor = 0;
 		break;
 
 	case K_UPARROW:
 		S_LocalSound ("misc/menu1.wav");
 		if (--m_main_cursor < 0)
+#ifdef RT_RENDERER
+			m_main_cursor = MAIN_ITEMS - 1;
+#else
 			m_main_cursor = (MAIN_ITEMS + (menu2 ? 1 : 0)) - 1;
+#endif
 		break;
 
 	case K_ENTER:
@@ -753,6 +778,16 @@ void M_Main_Key (int key)
 			M_Menu_Options_f ();
 			break;
 
+#ifdef RT_RENDERER
+		case 3:
+			// RT: assuming that we always have an overridden gfx/mainmenu.lmp with a 'Mods' button (modernise-2026)
+			M_Menu_Mods_f ();
+			break;
+
+		case 4:
+			M_Menu_Quit_f ();
+			break;
+#else
 		case 3:
 			M_Menu_Help_f ();
 			break;
@@ -766,6 +801,7 @@ void M_Main_Key (int key)
 		case 5:
 			M_Menu_Quit_f ();
 			break;
+#endif
 		}
 	}
 }
@@ -1649,6 +1685,29 @@ static void M_GameOptions_AdjustSliders (int dir, qboolean mouse)
 		Cvar_SetValue ("crosshair_alpha", f);
 		break;
 	case GAME_OPT_HUD_DETAIL: // interface detail
+#ifdef RT_RENDERER
+		// RT: cycles through 100 (classic full), 110 (classic), 110 + rt_hud_minimal (minimal), 120 (none) (modernise-2026)
+		if (CVAR_TO_FLOAT (scr_viewsize) < 110)
+		{
+			Cvar_SetValue ("viewsize", dir < 0 ? 110 : 120);
+			Cvar_SetValue ("rt_hud_minimal", 0);
+		}
+		else if (CVAR_TO_FLOAT (scr_viewsize) < 120 && !CVAR_TO_BOOL (rt_hud_minimal))
+		{
+			Cvar_SetValue ("viewsize", dir < 0 ? 110 : 100);
+			Cvar_SetValue ("rt_hud_minimal", dir < 0 ? 1 : 0);
+		}
+		else if (CVAR_TO_FLOAT (scr_viewsize) < 120 && CVAR_TO_BOOL (rt_hud_minimal))
+		{
+			Cvar_SetValue ("viewsize", dir < 0 ? 120 : 110);
+			Cvar_SetValue ("rt_hud_minimal", 0);
+		}
+		else
+		{
+			Cvar_SetValue ("viewsize", dir < 0 ? 100 : 110);
+			Cvar_SetValue ("rt_hud_minimal", dir < 0 ? 0 : 1);
+		}
+#else
 		// cycles through 120 (none), 110 (standard), 100 (full)
 		if (scr_viewsize.value <= 100.0f)
 			Cvar_SetValue ("viewsize", dir < 0 ? 110.0f : 120.0f);
@@ -1656,6 +1715,7 @@ static void M_GameOptions_AdjustSliders (int dir, qboolean mouse)
 			Cvar_SetValue ("viewsize", dir < 0 ? 120.0f : 100.0f);
 		else
 			Cvar_SetValue ("viewsize", dir < 0 ? 100.0f : 110.0f);
+#endif
 		break;
 	case GAME_OPT_HUD_STYLE:
 		Cvar_SetValue ("scr_style", ((int)scr_style.value + 3 + dir) % 3);
@@ -1778,12 +1838,23 @@ static void M_GameOptions_Draw (cb_context_t *cbx)
 
 		case GAME_OPT_HUD_DETAIL:
 			M_Print (cbx, MENU_LABEL_X, y, "HUD Detail");
+#ifdef RT_RENDERER
+			if (CVAR_TO_FLOAT (scr_viewsize) < 110)
+				M_Print (cbx, MENU_VALUE_X, y, "Classic full");
+			else if (CVAR_TO_FLOAT (scr_viewsize) < 120 && !CVAR_TO_BOOL (rt_hud_minimal))
+				M_Print (cbx, MENU_VALUE_X, y, "Classic");
+			else if (CVAR_TO_FLOAT (scr_viewsize) < 120 && CVAR_TO_BOOL (rt_hud_minimal))
+				M_Print (cbx, MENU_VALUE_X, y, "Minimal");
+			else
+				M_Print (cbx, MENU_VALUE_X, y, "None");
+#else
 			if (scr_viewsize.value >= 120.0f)
 				M_Print (cbx, MENU_VALUE_X, y, "None");
 			else if (scr_viewsize.value >= 110.0f)
 				M_Print (cbx, MENU_VALUE_X, y, "Minimal");
 			else
 				M_Print (cbx, MENU_VALUE_X, y, "Full");
+#endif
 			break;
 
 		case GAME_OPT_HUD_STYLE:
@@ -1866,8 +1937,10 @@ static void M_GameOptions_Draw (cb_context_t *cbx)
 
 enum
 {
+#ifndef RT_RENDERER // RT: gamma/contrast do nothing under RTGL1 (its own tonemapping); the fork dropped both rows
 	GRAPHICS_OPT_GAMMA,
 	GRAPHICS_OPT_CONTRAST,
+#endif
 	GRAPHICS_OPT_FOV,
 	GRAPHICS_OPT_8BIT_COLOR,
 	GRAPHICS_OPT_FILTER,
@@ -2020,6 +2093,7 @@ static void M_GraphicsOptions_AdjustSliders (int dir, qboolean mouse)
 
 	switch (graphics_options_cursor)
 	{
+#ifndef RT_RENDERER
 	case GRAPHICS_OPT_GAMMA:
 		f = M_GetSliderPos (0.5, 1, vid_gamma.value, true, mouse, clamped_mouse, dir, 0.05, 999);
 		Cvar_SetValue ("gamma", f);
@@ -2028,6 +2102,7 @@ static void M_GraphicsOptions_AdjustSliders (int dir, qboolean mouse)
 		f = M_GetSliderPos (1, 2, vid_contrast.value, false, mouse, clamped_mouse, dir, 0.1, 999);
 		Cvar_SetValue ("contrast", f);
 		break;
+#endif
 	case GRAPHICS_OPT_FOV:
 		f = M_GetSliderPos (80, 130, scr_fov.value, false, mouse, clamped_mouse, dir, 5, 999);
 		Cvar_SetValue ("fov", f);
@@ -2150,6 +2225,7 @@ static void M_GraphicsOptions_Draw (cb_context_t *cbx)
 	M_DrawPic (cbx, (320 - p->width) / 2, 4, p);
 
 	// Draw the items in the order of the enum defined above:
+#ifndef RT_RENDERER
 	M_Print (cbx, MENU_LABEL_X, top + CHARACTER_SIZE * GRAPHICS_OPT_GAMMA, "Gamma");
 	r = (1.0 - vid_gamma.value) / 0.5;
 	M_DrawSlider (cbx, MENU_SLIDER_X, top + CHARACTER_SIZE * GRAPHICS_OPT_GAMMA, r, va ("%.1f", vid_gamma.value));
@@ -2157,6 +2233,7 @@ static void M_GraphicsOptions_Draw (cb_context_t *cbx)
 	M_Print (cbx, MENU_LABEL_X, top + CHARACTER_SIZE * GRAPHICS_OPT_CONTRAST, "Contrast");
 	r = vid_contrast.value - 1.0;
 	M_DrawSlider (cbx, MENU_SLIDER_X, top + CHARACTER_SIZE * GRAPHICS_OPT_CONTRAST, r, va ("%.1f", vid_contrast.value));
+#endif
 
 	M_Print (cbx, MENU_LABEL_X, top + CHARACTER_SIZE * GRAPHICS_OPT_FOV, "Field of View");
 	r = (scr_fov.value - 80) / (130 - 80);
@@ -2506,6 +2583,9 @@ typedef struct
 } menukeybind_t;
 
 static const menukeybind_t default_keybinds[] = {
+#ifdef RT_RENDERER
+	{"rt_pfnswitch", "Switch renderer"}, // RT: RT_SwitchRenderer in rt_gl_vidsdl.c (modernise-2026)
+#endif
 	{"+forward", "Move Forward"},
 	{"+back", "Move Backward"},
 	{"+moveleft", "Strafe Left"},
@@ -4832,8 +4912,12 @@ void M_UpdateMouse (void)
 	}
 	else if (slider_grab)
 	{
+#ifdef RT_RENDERER
+		const bool graphic_option_has_sliders = (graphics_options_cursor == GRAPHICS_OPT_FOV) || (graphics_options_cursor == GRAPHICS_OPT_MAX_FPS);
+#else
 		const bool graphic_option_has_sliders = ((graphics_options_cursor >= GRAPHICS_OPT_GAMMA) && (graphics_options_cursor <= GRAPHICS_OPT_FOV)) ||
 												(graphics_options_cursor == GRAPHICS_OPT_MAX_FPS);
+#endif
 
 		const bool game_option_has_sliders = ((game_options_cursor >= GAME_OPT_SCALE) && (game_options_cursor <= GAME_OPT_VIEWROLL)) ||
 											 (game_options_cursor == GAME_OPT_CROSSHAIR_SIZE) || (game_options_cursor == GAME_OPT_CROSSHAIR_OPACITY);

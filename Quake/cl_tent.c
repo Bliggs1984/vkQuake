@@ -35,6 +35,10 @@ static sfx_t *cl_sfx_ric2;
 static sfx_t *cl_sfx_ric3;
 static sfx_t *cl_sfx_r_exp3;
 
+#ifdef RT_RENDERER
+extern cvar_t rt_classic_render;
+#endif
+
 /*
 =================
 CL_ParseTEnt
@@ -214,11 +218,23 @@ void CL_ParseTEnt (void)
 		pos[2] = MSG_ReadCoord (cl.protocolflags);
 		if (PScript_RunParticleEffectTypeString (pos, NULL, 1, "TE_EXPLOSION"))
 			R_ParticleExplosion (pos);
+#ifdef RT_RENDERER
+		// RT: the explosion light comes from the explosion sprite's custom texture info; only classic mode wants the dlight
+		if (CVAR_TO_BOOL (rt_classic_render))
+		{
+			dl = CL_AllocDlight (0);
+			VectorCopy (pos, dl->origin);
+			dl->radius = 350;
+			dl->die = cl.time + 0.5;
+			dl->decay = 300;
+		}
+#else
 		dl = CL_AllocDlight (0);
 		VectorCopy (pos, dl->origin);
 		dl->radius = 350;
 		dl->die = cl.time + 0.5;
 		dl->decay = 300;
+#endif
 		S_StartSound (-1, 0, cl_sfx_r_exp3, pos, 1, 1);
 		break;
 

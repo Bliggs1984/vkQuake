@@ -29,7 +29,7 @@ The engine has a few builtins.
 #include "quakedef.h"
 #include "gl_heap.h"
 
-cvar_t r_fteparticles = {"r_fteparticles", "1", CVAR_ARCHIVE};
+cvar_t r_fteparticles = {"r_fteparticles", "1", CVAR_ARCHIVE_GAME}; // 1.36: per-game config, not the global one
 
 #ifdef PSET_SCRIPT
 #define USE_DECALS
@@ -156,8 +156,6 @@ typedef struct trailstate_s
 #define CON_WARNING "Warning: "
 entity_t *CL_EntityNum (int num);
 #define BEF_LINES 1
-
-extern int PClassic_PointFile (int c, vec3_t point);
 
 #define PART_VALID(part) ((part) >= 0 && (part) < numparticletypes)
 
@@ -530,149 +528,20 @@ static unsigned short *cl_curstrisidx;
 static unsigned int    cl_numstrisidx;
 static unsigned int    cl_maxstrisidx[2];
 
-/*
-RTFTE_RecursiveHullTrace
-Optimised version of vanilla's SV_RecursiveHullCheck that avoids the excessive pointcontents calls by using the traceline itself to check for contents.
-call Q1BSP_RecursiveHullCheck for a drop-in replacement of SV_RecursiveHullCheck, if desired.
-*/
-enum
-{
-	rtfte_rht_solid,
-	rtfte_rht_empty,
-	rtfte_rht_impact
-};
-struct rtfte_rhtctx_s
-{
-	vec3_t       start, end;
-	mclipnode_t *clipnodes;
-	mplane_t    *planes;
-};
-static int RTFTE_RecursiveHullTrace (struct rtfte_rhtctx_s *ctx, int num, float p1f, float p2f, vec3_t p1, vec3_t p2, trace_t *trace)
-{
-	mclipnode_t *node;
-	mplane_t    *plane;
-	float        t1, t2;
-	vec3_t       mid;
-	int          side;
-	float        midf;
-	int          rht;
-
-reenter:
-
-	if (num < 0)
-	{
-		/*hit a leaf*/
-		if (num == CONTENTS_SOLID)
-		{
-			if (trace->allsolid)
-				trace->startsolid = true;
-			return rtfte_rht_solid;
-		}
-		else
-		{
-			trace->allsolid = false;
-			if (num == CONTENTS_EMPTY)
-				trace->inopen = true;
-			else
-				trace->inwater = true;
-			return rtfte_rht_empty;
-		}
-	}
-
-	/*its a node*/
-
-	/*get the node info*/
-	node = ctx->clipnodes + num;
-	plane = ctx->planes + node->planenum;
-
-	if (plane->type < 3)
-	{
-		t1 = p1[plane->type] - plane->dist;
-		t2 = p2[plane->type] - plane->dist;
-	}
-	else
-	{
-		t1 = DotProduct (plane->normal, p1) - plane->dist;
-		t2 = DotProduct (plane->normal, p2) - plane->dist;
-	}
-
-	/*if its completely on one side, resume on that side*/
-	if (t1 >= 0 && t2 >= 0)
-	{
-		num = node->children[0];
-		goto reenter;
-	}
-	if (t1 < 0 && t2 < 0)
-	{
-		num = node->children[1];
-		goto reenter;
-	}
-
-	if (plane->type < 3)
-	{
-		t1 = ctx->start[plane->type] - plane->dist;
-		t2 = ctx->end[plane->type] - plane->dist;
-	}
-	else
-	{
-		t1 = DotProduct (plane->normal, ctx->start) - plane->dist;
-		t2 = DotProduct (plane->normal, ctx->end) - plane->dist;
-	}
-
-	side = t1 < 0;
-
-	midf = t1 / (t1 - t2);
-	if (midf < p1f)
-		midf = p1f;
-	if (midf > p2f)
-		midf = p2f;
-	VectorInterpolate (ctx->start, midf, ctx->end, mid);
-
-	rht = RTFTE_RecursiveHullTrace (ctx, node->children[side], p1f, midf, p1, mid, trace);
-	if (rht != rtfte_rht_empty && !trace->allsolid)
-		return rht;
-	rht = RTFTE_RecursiveHullTrace (ctx, node->children[side ^ 1], midf, p2f, mid, p2, trace);
-	if (rht != rtfte_rht_solid)
-		return rht;
-
-	if (side)
-	{
-		/*we impacted the back of the node, so flip the plane*/
-		trace->plane.dist = -plane->dist;
-		VectorScale (plane->normal, -1, trace->plane.normal);
-		midf = (t1 + DIST_EPSILON) / (t1 - t2);
-	}
-	else
-	{
-		/*we impacted the front of the node*/
-		trace->plane.dist = plane->dist;
-		VectorCopy (plane->normal, trace->plane.normal);
-		midf = (t1 - DIST_EPSILON) / (t1 - t2);
-	}
-
-	t1 = DotProduct (trace->plane.normal, ctx->start) - trace->plane.dist;
-	t2 = DotProduct (trace->plane.normal, ctx->end) - trace->plane.dist;
-	midf = (t1 - DIST_EPSILON) / (t1 - t2);
-	if (midf < 0)
-		midf = 0;
-	if (midf > 1)
-		midf = 1;
-	trace->fraction = midf;
-	VectorCopy (mid, trace->endpos);
-	VectorInterpolate (ctx->start, midf, ctx->end, trace->endpos);
-
-	return rtfte_rht_impact;
-}
 static qboolean Q1BSP_RecursiveHullCheck (hull_t *hull, int num, float p1f, float p2f, vec3_t p1, vec3_t p2, trace_t *trace)
 {
 	// this function is basicall meant as a drop-in replacement for fte's SV_RecursiveHullCheck. p1f and p2f must be 0+1 respectively, num must be
 	// hull->firstclipnode
-	struct rtfte_rhtctx_s ctx;
+	// 1.36: the private 1.20.3 copy of this trace was promoted to the shared engine Q1BSP_RecursiveHullTrace (world.h),
+	// which also gained the double-precision plane test; use it like r_part_fte.c does instead of keeping a stale copy
+	struct rhtctx_s ctx;
 	VectorCopy (p1, ctx.start);
 	VectorCopy (p2, ctx.end);
 	ctx.clipnodes = hull->clipnodes;
+	ctx.hitcontents = CONTENTMASK_FROMQ1 (CONTENTS_SOLID);
 	ctx.planes = hull->planes;
-	return RTFTE_RecursiveHullTrace (&ctx, num, p1f, p2f, p1, p2, trace) != rtfte_rht_impact;
+
+	return Q1BSP_RecursiveHullTrace (&ctx, num, p1f, p2f, p1, p2, trace) != rht_impact;
 }
 
 float CL_TraceLine (vec3_t start, vec3_t end, vec3_t impact, vec3_t normal, int *entnum)
@@ -707,9 +576,27 @@ float CL_TraceLine (vec3_t start, vec3_t end, vec3_t impact, vec3_t normal, int 
 	{
 		ent = &cl.entities[trace_line_ents[i]];
 
-		// FIXME: deal with rotations
-		VectorSubtract (start, ent->origin, relstart);
-		VectorSubtract (end, ent->origin, relend);
+		// 1.36: rotated brush entities are traced in entity space (matches how the renderer rotates brush models)
+		const qboolean rotated = ent->angles[0] || ent->angles[1] || ent->angles[2];
+		vec3_t         axis[3];
+		if (rotated)
+		{
+			vec3_t temp;
+			AngleVectors (ent->angles, axis[0], axis[1], axis[2]);
+			VectorSubtract (start, ent->origin, temp);
+			relstart[0] = DotProduct (temp, axis[0]);
+			relstart[1] = -DotProduct (temp, axis[1]);
+			relstart[2] = DotProduct (temp, axis[2]);
+			VectorSubtract (end, ent->origin, temp);
+			relend[0] = DotProduct (temp, axis[0]);
+			relend[1] = -DotProduct (temp, axis[1]);
+			relend[2] = DotProduct (temp, axis[2]);
+		}
+		else
+		{
+			VectorSubtract (start, ent->origin, relstart);
+			VectorSubtract (end, ent->origin, relend);
+		}
 
 		memset (&trace, 0, sizeof (trace));
 		trace.fraction = 1;
@@ -719,12 +606,25 @@ float CL_TraceLine (vec3_t start, vec3_t end, vec3_t impact, vec3_t normal, int 
 		{
 			frac = trace.fraction;
 
-			// FIXME: deal with rotations.
-			VectorAdd (trace.endpos, ent->origin, impact);
-			VectorCopy (trace.plane.normal, normal);
+			if (rotated)
+			{
+				// rotate the impact point and normal back to world space
+				for (int j = 0; j < 3; j++)
+				{
+					impact[j] = ent->origin[j] + (trace.endpos[0] * axis[0][j]) - (trace.endpos[1] * axis[1][j]) + (trace.endpos[2] * axis[2][j]);
+					normal[j] = (trace.plane.normal[0] * axis[0][j]) - (trace.plane.normal[1] * axis[1][j]) + (trace.plane.normal[2] * axis[2][j]);
+				}
+			}
+			else
+			{
+				VectorAdd (trace.endpos, ent->origin, impact);
+				VectorCopy (trace.plane.normal, normal);
+			}
 
+			// 1.36: callers (decals via CL_EntityNum) want the entity number; trace_line_ents[] is a compacted list, so
+			// the loop index is not it (the 1.20.3 loop iterated cl.entities directly)
 			if (entnum)
-				*entnum = i;
+				*entnum = trace_line_ents[i];
 			if (frac <= 0)
 				break;
 		}
@@ -1161,22 +1061,25 @@ static void P_LoadTexture (part_type_t *ptype, qboolean warn)
 		ptype->looks.texture = TexMgr_FindTexture (NULL, texname);
 		if (!ptype->looks.texture)
 		{
+			// 1.36: Image_LoadImage reports the pixel format (an .lmp comes back SRC_INDEXED, 1 byte/pixel);
+			// uploading that as SRC_RGBA read 4x past the buffer and produced garbage
+			enum srcformat fmt = SRC_RGBA;
 			if (!data)
 			{
 				q_snprintf (filename, sizeof (filename), "textures/%s", ptype->texname);
-				enum srcformat imgfmt_unused; data = Image_LoadImage (filename, &fwidth, &fheight, &imgfmt_unused, 0);
+				data = Image_LoadImage (filename, &fwidth, &fheight, &fmt, 0);
 			}
 			if (!data)
 			{
 				q_snprintf (filename, sizeof (filename), "%s", ptype->texname);
-				enum srcformat imgfmt_unused; data = Image_LoadImage (filename, &fwidth, &fheight, &imgfmt_unused, 0);
+				data = Image_LoadImage (filename, &fwidth, &fheight, &fmt, 0);
 			}
 
 			if (data)
 			{
 				ptype->looks.texture = TexMgr_LoadImage (
 					NULL,
-					NULL, texname, fwidth, fheight, SRC_RGBA, data, filename, 0,
+					NULL, texname, fwidth, fheight, fmt, data, filename, 0,
 					(ptype->looks.premul ? TEXPREF_PREMULTIPLY : 0) | (ptype->looks.nearest ? TEXPREF_NEAREST : 0) | TEXPREF_NOPICMIP |
 						TEXPREF_ALPHA);
 			}

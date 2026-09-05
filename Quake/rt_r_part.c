@@ -45,7 +45,8 @@ int r_numparticles;
 gltexture_t *particletexture1, *particletexture2, *particletexture3, *particletexture4; // johnfitz
 
 cvar_t r_particles = {"r_particles", "2", CVAR_ARCHIVE};         // johnfitz
-// cvar_t r_quadparticles = {"r_quadparticles", "1", CVAR_ARCHIVE}; // johnfitz
+// 1.36: archived by the vanilla renderer; register it as inert so a shared vkQuake.cfg does not log "Unknown command"
+static cvar_t r_quadparticles = {"r_quadparticles", "1", CVAR_ARCHIVE}; // johnfitz
 
 #define QUAD_PARTICLES 0
 static uint32_t *quadindices = NULL;
@@ -198,7 +199,7 @@ void R_InitParticles (void)
 	particles = (particle_t *)Mem_Alloc (r_numparticles * sizeof (particle_t));
 
 	Cvar_RegisterVariable (&r_particles); // johnfitz
-	// Cvar_RegisterVariable (&r_quadparticles); // johnfitz
+	Cvar_RegisterVariable (&r_quadparticles); // johnfitz -- 1.36: inert under RT (RTGL1 draws its own particle quads)
 
 	R_InitParticleTextures (); // johnfitz
 	R_InitParticleIndexBuffer ();

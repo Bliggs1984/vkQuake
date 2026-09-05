@@ -206,7 +206,11 @@ qpic_t *Draw_PicFromWad2 (const char *name, unsigned int texflags, int picflags)
 			return &pic->pic;
 	}
 	if (menu_numcachepics == MAX_CACHED_PICS)
-		Sys_Error ("menu_numcachepics == MAX_CACHED_PICS");
+	{
+		// 1.36 has an unbounded hashed pic cache; keep the fixed array but don't abort the game for it
+		Con_Warning ("Draw_PicFromWad: pic cache full, ignoring \"%s\"\n", name);
+		return pic_nul;
+	}
 
 	p = (qpic_t *)W_GetLumpName (name, &info);
 	if (!p)
@@ -214,12 +218,22 @@ qpic_t *Draw_PicFromWad2 (const char *name, unsigned int texflags, int picflags)
 		Con_SafePrintf ("W_GetLumpName: %s not found\n", name);
 		return pic_nul; // johnfitz
 	}
+	// 1.36: these are not fatal -- pr_ext.c (QC drawpic with PICFLAG_WAD) falls back to Draw_TryCachePic when pic_nul comes back
 	if (info->type != TYP_QPIC)
-		Sys_Error ("Draw_PicFromWad: lump \"%s\" is not a qpic", name);
+	{
+		Con_DPrintf ("Draw_PicFromWad: lump \"%s\" is not a qpic\n", name);
+		return pic_nul;
+	}
 	if (info->size < (int)(sizeof (int) * 2) || sizeof (int) * 2 + p->width * p->height > (size_t)info->size)
-		Sys_Error ("Draw_PicFromWad: pic \"%s\" truncated", name);
+	{
+		Con_Warning ("Draw_PicFromWad: pic \"%s\" truncated\n", name);
+		return pic_nul;
+	}
 	if (p->width < 0 || p->height < 0)
-		Sys_Error ("Draw_PicFromWad: bad size (%dx%d) for pic \"%s\"", p->width, p->height, name);
+	{
+		Con_Warning ("Draw_PicFromWad: bad size (%dx%d) for pic \"%s\"\n", p->width, p->height, name);
+		return pic_nul;
+	}
 
 	// load little ones into the scrap
 	if (p->width < 64 && p->height < 64)
@@ -271,7 +285,7 @@ qpic_t *Draw_PicFromWad2 (const char *name, unsigned int texflags, int picflags)
 
 qpic_t *Draw_PicFromWad (const char *name)
 {
-	return Draw_PicFromWad2 (name, TEXPREF_ALPHA | TEXPREF_PAD | TEXPREF_NOPICMIP, PICFLAG_WAD);
+	return Draw_PicFromWad2 (name, TEXPREF_ALPHA | TEXPREF_PAD | TEXPREF_NOPICMIP, PICFLAG_AUTO); // 1.36
 }
 
 qpic_t *Draw_GetCachedPic (const char *path)
@@ -305,7 +319,11 @@ qpic_t *Draw_TryCachePic (const char *path, unsigned int texflags, int picflags)
 			return &pic->pic;
 	}
 	if (menu_numcachepics == MAX_CACHED_PICS)
-		Sys_Error ("menu_numcachepics == MAX_CACHED_PICS");
+	{
+		// 1.36 has an unbounded hashed pic cache; keep the fixed array but don't abort the game for it
+		Con_Warning ("Draw_TryCachePic: pic cache full, ignoring \"%s\"\n", path);
+		return NULL;
+	}
 
 	//
 	// load the pic from disk (1.36: any format Image_LoadImage understands -- .lmp, .png, .tga, .jpg)
@@ -414,8 +432,11 @@ Draw_NewGame -- johnfitz
 */
 void Draw_NewGame (void)
 {
+	extern SDL_mutex *draw_qcvm_mutex; // 1.36 (gl_screen.c): also protects the pic cache / scrap against the CSQC draw path
 	cachepic_t *pic;
 	int         i;
+
+	SDL_LockMutex (draw_qcvm_mutex);
 
 	// empty scrap and reallocate gltextures
 	memset (scrap_allocated, 0, sizeof (scrap_allocated));
@@ -434,6 +455,8 @@ void Draw_NewGame (void)
 	SCR_LoadPics ();
 	Sbar_LoadPics ();
 	// 1.36 has no PR_ReloadPics; QC pics are re-cached lazily
+
+	SDL_UnlockMutex (draw_qcvm_mutex);
 }
 
 /*
@@ -478,8 +501,10 @@ static void Draw_FillCharacterQuadScaled (float x, float y, float scale, char nu
 	int   row, col;
 	float frow, fcol, size;
 
-	row = num >> 4;
-	col = num & 15;
+	// 1.36: chars >= 128 (coloured text) are negative in a signed char; index the glyph sheet unsigned
+	const int glyph = (unsigned char)num;
+	row = glyph >> 4;
+	col = glyph & 15;
 
 	frow = row * 0.0625;
 	fcol = col * 0.0625;
@@ -563,9 +588,10 @@ void Draw_Character (cb_context_t *cbx, float x, float y, int num)
 		.transform = RT_TRANSFORM_IDENTITY,
 		.color = {canvas_color[0], canvas_color[1], canvas_color[2], canvas_color[3]},
 		.material = char_texture ? char_texture->rtmaterial : RG_NO_MATERIAL,
-		.pipelineState = RG_RASTERIZED_GEOMETRY_STATE_ALPHA_TEST,
-		.blendFuncSrc = 0,
-		.blendFuncDst = 0,
+		// 1.36: text honours GL_SetCanvasColor alpha (console notify fade, tab hint, greyed menu entries)
+		.pipelineState = (canvas_color[3] < 1.0f) ? RG_RASTERIZED_GEOMETRY_STATE_BLEND_ENABLE : RG_RASTERIZED_GEOMETRY_STATE_ALPHA_TEST,
+		.blendFuncSrc = (canvas_color[3] < 1.0f) ? RG_BLEND_FACTOR_SRC_ALPHA : 0,
+		.blendFuncDst = (canvas_color[3] < 1.0f) ? RG_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA : 0,
 	};
 
 	RgResult r = rgUploadRasterizedGeometry (vulkan_globals.instance, &info, cbx->cur_viewprojection, &cbx->cur_viewport);
@@ -611,9 +637,10 @@ void Draw_String (cb_context_t *cbx, float x, float y, const char *str)
 		.transform = RT_TRANSFORM_IDENTITY,
 		.color = {canvas_color[0], canvas_color[1], canvas_color[2], canvas_color[3]},
 		.material = char_texture ? char_texture->rtmaterial : RG_NO_MATERIAL,
-		.pipelineState = RG_RASTERIZED_GEOMETRY_STATE_ALPHA_TEST,
-		.blendFuncSrc = 0,
-		.blendFuncDst = 0,
+		// 1.36: text honours GL_SetCanvasColor alpha (console notify fade, tab hint, greyed menu entries)
+		.pipelineState = (canvas_color[3] < 1.0f) ? RG_RASTERIZED_GEOMETRY_STATE_BLEND_ENABLE : RG_RASTERIZED_GEOMETRY_STATE_ALPHA_TEST,
+		.blendFuncSrc = (canvas_color[3] < 1.0f) ? RG_BLEND_FACTOR_SRC_ALPHA : 0,
+		.blendFuncDst = (canvas_color[3] < 1.0f) ? RG_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA : 0,
 	};
 
 	RgResult r = rgUploadRasterizedGeometry (vulkan_globals.instance, &info, cbx->cur_viewprojection, &cbx->cur_viewport);
@@ -662,9 +689,10 @@ void Draw_String_Scaled (cb_context_t *cbx, float x, float y, const char *str, f
 		.transform = RT_TRANSFORM_IDENTITY,
 		.color = {canvas_color[0], canvas_color[1], canvas_color[2], canvas_color[3]},
 		.material = char_texture ? char_texture->rtmaterial : RG_NO_MATERIAL,
-		.pipelineState = RG_RASTERIZED_GEOMETRY_STATE_ALPHA_TEST,
-		.blendFuncSrc = 0,
-		.blendFuncDst = 0,
+		// 1.36: text honours GL_SetCanvasColor alpha (console notify fade, tab hint, greyed menu entries)
+		.pipelineState = (canvas_color[3] < 1.0f) ? RG_RASTERIZED_GEOMETRY_STATE_BLEND_ENABLE : RG_RASTERIZED_GEOMETRY_STATE_ALPHA_TEST,
+		.blendFuncSrc = (canvas_color[3] < 1.0f) ? RG_BLEND_FACTOR_SRC_ALPHA : 0,
+		.blendFuncDst = (canvas_color[3] < 1.0f) ? RG_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA : 0,
 	};
 
 	RgResult r = rgUploadRasterizedGeometry (vulkan_globals.instance, &info, cbx->cur_viewprojection, &cbx->cur_viewport);
@@ -1143,6 +1171,7 @@ void GL_SetCanvas (cb_context_t *cbx, canvastype newcanvas)
 	float pad = CVAR_TO_INT32 (rt_hud_padding);
 
 	extern vrect_t scr_vrect;
+	extern cvar_t  scr_style; // 1.36 (gl_screen.c)
 	float          s;
 	int            lines;
 
@@ -1174,7 +1203,7 @@ void GL_SetCanvas (cb_context_t *cbx, canvastype newcanvas)
 		break;
 	case CANVAS_SBAR:
 		s = CLAMP (1.0, scr_sbarscale.value, (float)glwidth / 320.0);
-		if (cl.gametype == GAME_DEATHMATCH)
+		if (cl.gametype == GAME_DEATHMATCH && scr_style.value < 2.0f) // 1.36: the modern HUD (scr_style 2) keeps the centred canvas in DM
 		{
 			GL_OrthoMatrix (cbx, 0, glwidth / s, 48, 0, -99999, 99999);
 			GL_Viewport (cbx, glx, gly, glwidth, 48 * s, 0.0f, 1.0f);
@@ -1226,8 +1255,13 @@ void GL_SetCanvas (cb_context_t *cbx, canvastype newcanvas)
 		GL_OrthoMatrix (cbx, 0, 320, 200, 0, -99999, 99999);
 		GL_Viewport (cbx, glx + glwidth - 320 * s, gly, 320 * s, 200 * s, 0.0f, 1.0f);
 		break;
-	case CANVAS_TOPRIGHT: // used by disc
-		s = 1;
+	case CANVAS_TOPLEFT:                   // 1.36: modern HUD (scr_style 2) frag counter, sbar.c Sbar_DrawModern
+		s = (float)glwidth / vid.conwidth; // use console scale
+		GL_OrthoMatrix (cbx, 0, 320, 200, 0, -99999, 99999);
+		GL_Viewport (cbx, glx, gly + glheight - 200 * s, 320 * s, 200 * s, 0.0f, 1.0f);
+		break;
+	case CANVAS_TOPRIGHT:                  // 1.36: modern HUD weapon icons (was "used by disc" at 1:1 in 1.20)
+		s = (float)glwidth / vid.conwidth; // use console scale
 		GL_OrthoMatrix (cbx, 0, 320, 200, 0, -99999, 99999);
 		GL_Viewport (cbx, glx + glwidth - 320 * s, gly + glheight - 200 * s, 320 * s, 200 * s, 0.0f, 1.0f);
 		break;

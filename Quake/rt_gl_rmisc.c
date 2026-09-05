@@ -206,6 +206,7 @@ void R_Init (void)
 	Cvar_RegisterVariable (&r_pos);
 	Cvar_RegisterVariable (&gl_polyblend);
 	Cvar_RegisterVariable (&gl_nocolors);
+	Cvar_SetCallback (&gl_nocolors, Mod_RefreshSkins_f); // 1.36: re-translate player skins when toggled (shared gl_model.c)
 
 	// johnfitz -- new cvars
 	Cvar_RegisterVariable (&r_waterquality);
@@ -301,6 +302,19 @@ void R_TranslateNewPlayerSkin (int playernum)
 	}
 
 	pixels = (byte *)paliashdr->texels[skinnum];
+	if (!pixels)
+	{
+		// 1.36: texels[] is only kept for indexed skins; an external (png/tga) or MD5 player skin leaves it NULL
+		// and TexMgr_LoadImage would CRC/upload from a NULL pointer
+		static qboolean warned = false;
+		if (!warned)
+		{
+			warned = true;
+			Con_Warning ("can't recolor non-indexed player skin\n");
+		}
+		playertextures[playernum] = NULL;
+		return;
+	}
 
 	// upload new image
 	q_snprintf (name, sizeof (name), "player_%i", playernum);
@@ -365,7 +379,7 @@ static void R_ParseWorldspawn (void)
 			q_strlcpy (key, com_token, sizeof (key));
 		while (key[0] && key[strlen (key) - 1] == ' ') // remove trailing spaces
 			key[strlen (key) - 1] = 0;
-		data = COM_Parse (data);
+		data = COM_ParseEx (data, CPE_ALLOWTRUNC); // 1.36: an overlong worldspawn value (editor keys) must not abort the parse
 		if (!data)
 			return; // error
 		q_strlcpy (value, com_token, sizeof (value));
