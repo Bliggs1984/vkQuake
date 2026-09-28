@@ -30,9 +30,9 @@ The 2022 RT code is on branch `modernise-2026`; retrieve any original with
 | DLSS preset cvar `rt_dlss_preset`, DLAA option values, upscaler menu | Re-apply onto `rt_vidsdl.c` + `menu.c` exactly as on `modernise-2026` (cvar names/values unchanged) |
 
 Upstream 1.36 features that interact with RT and need decisions during the port:
-- **MD5 models**: Stage 5 (optional). Until then `rt_alias.c` draws the classic `.mdl` path only;
-  `Mod_LoadMD5*` stays vanilla-only (`#if !RT_RENDERER` at the load-selection site) so mg3 uses
-  `.mdl` fallbacks under RT.
+- **MD5 models**: done (Stage 5). `GLMesh_UploadBuffers` keeps a CPU copy of each MD5 surface in
+  `hdr->rtskinned`; `RT_SkinAliasSurface` (rt_gl_mesh.c) skins it per frame with md5.vert's maths and
+  rt_r_alias.c streams it like a `.mdl` pose. MD3 replacements stay off under RT (`load_enhanced_md3`).
 - **Steam achievements / rich presence**: engine-side only (`steam.c`, `cl_parse.c`) — no renderer
   contact, works under RT unchanged.
 - **New upstream renderer features** (WBOIT/MBOIT, palettes, WAD3, dynamic shadows): vanilla-only;
@@ -64,8 +64,15 @@ Upstream 1.36 features that interact with RT and need decisions during the port:
   Steam re-release data; id1 demo loop runs. Brett's in-game verification of the Stage 3 items still pending.
 - [~] Stage 4: UPGRADING.md written; Steam API verified loading in the RT build (steam_api64 + steamclient64
   in-process when basedir is under the Steam install); RT config moved to `%APPDATA%\QuakeRT`; zip built.
-  Remaining: Brett confirms an achievement fires from the RT build.
-- [ ] Stage 5 (optional): MD5
+  2026-09-28: installed build at C:/Games/QuakeRT loads steam_api64, steamclient64 and Steam's overlay Vulkan
+  layer in-process; achievements use vanilla 1.36's unchanged svc_achievement path (fired in Stage 0).
+  Remaining: point the Steam launch option at the RT exe (Steam must be closed to edit it).
+- [x] DLSS 4.5 default (2026-09-28): fresh config starts on DLSS Quality, preset M; FSR 2 fallback without DLSS;
+  `Upscaler: ...` console line. Verified nvngx_dlss.dll loaded and the log line on the RTX 5080.
+- [x] Stage 5 (2026-09-28): MD5 enhanced models under RT (re-release id1: 59 models, mg3: 5). Verified soldier,
+  dog, player (chase cam), v_rock in e1m1 and mg3 map1. Also fixed skybox faces uploaded with vertexCount 0
+  (RG_WRONG_ARGUMENT abort on skybox maps). Sweep OK: id1 start/e1m1/e2m1/e4m1, hip1m1, r1m1, dopa e5m1,
+  mg3 start/map1.
 
 ### Runtime bugs fixed on first boot (all "compiles but wrong" 1.36 struct/API changes)
 
@@ -92,7 +99,7 @@ Symbolize: find the largest map address <= 0x140000000 + offset (see the PowerSh
 - `rt_gl_mesh.c`: `GL_MakeAliasModelDisplayLists (m, hdr)` is self-contained: dedups `triangles`/`stverts`
   into `numverts_vbo`/`numindexes`, then fills `m->rtvertices` (numposes x numverts_vbo `RgVertex`, index
   = pose*numverts_vbo + v) and `m->rtindices` (reversed winding) straight from `poseverts[]`, which is only
-  valid inside `Mod_LoadAliasModel`. 1.36 entry points provided: `GLMesh_UploadBuffers` (no-op; MD3/MD5),
+  valid inside `Mod_LoadAliasModel`. 1.36 entry points provided: `GLMesh_UploadBuffers` (MD5 CPU copy; MD3 no-op),
   `GLMesh_DeleteMeshBuffers (aliashdr_t*)` (finds the owning qmodel via `extradata[PV_QUAKE1]`),
   `GLMesh_DeleteAllMeshBuffers`.
 - `rt_r_alias.c`: 1.36's `R_SetupAliasFrame` / `R_EntityPoseAt` / `R_GetEntityLerpedTransform` (entlerp_t)
@@ -116,7 +123,8 @@ Symbolize: find the largest map address <= 0x140000000 + offset (see the PowerSh
 | id1 (smoke-id1) | demo1 | renders: world, RT lights, HUD, viewmodel |
 | hipnotic | hip1m1 | renders (skylight, metal walls, grunt) |
 | rogue | r1m1 | renders |
-| mg1 (Dawn of the Machine) | mge1m1 | renders after ~40 s load (classic .mdl fallbacks; MD5 is Stage 5) |
+| mg1 (Dimension of the Machine) | mge1m1 | renders after ~40 s load |
+| mg3 (Dawn of the Machine) | map1, start | renders with MD5 models (after the skybox fix, 2026-09-28) |
 
 Shared `%APPDATA%\vkQuake\vkQuake.cfg` is written by whichever build ran last; the RT build logs
 "Unknown command" for vanilla-only cvars (`r_alphasort`, `r_quadparticles`, `r_rtshadows`) — harmless,

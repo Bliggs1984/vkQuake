@@ -47,8 +47,9 @@ the same quality level moves to FSR 2 automatically. The console log names the u
 
 - Base engine 1.20.3 → 1.36.0. Expect vanilla 1.36 behaviour for everything that is not rendering:
   menus, input, netcode, save games, mod support (BSP2, FTE protocol 999, QSS extensions).
-- Skeletal MD5 models from the re-release are **not** used yet; the classic `.mdl` versions are drawn instead
-  (this is also what 1.1.0 did). Planned as a later stage.
+- The re-release's enhanced models (skeletal MD5: all monsters, weapons, items and the player, plus Dawn of the
+  Machine's own) are now drawn under ray tracing. 1.1.0 only had the classic `.mdl` versions. Graphics options →
+  Models (`r_enhancedmodels 0`) switches back to the classic models.
 - The 1.1.0 command-line helpers that copied Steam data or music into a local folder are gone: 1.36 reads the
   Steam install directly.
 - Windowed/fullscreen handling is SDL3's. `vid_fullscreen 2` (exclusive fullscreen) behaves like `1`.
@@ -57,7 +58,9 @@ the same quality level moves to FSR 2 automatically. The console log names the u
 
 - Vanilla-only graphics menu rows (anti-aliasing, render scale, anisotropy, shadows) are hidden under RT.
 - Fog volumes from map scripts are not forwarded to the path tracer.
-- Per-entity model scale sent by mods (`netstate.scale`) is ignored by the RT alias renderer.
+- MD3 replacement models (some community mods) are not drawn under ray tracing; the `.mdl` is used instead.
+- The `screenshot` console command is not implemented under ray tracing; use Steam's screenshot key (F12)
+  when launched through Steam.
 
 ## Building from source
 
