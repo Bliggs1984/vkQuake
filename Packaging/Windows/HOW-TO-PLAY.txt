@@ -21,7 +21,7 @@ WHAT YOU NEED
 INSTALLING
 ----------
 
-  1. Double-click  QuakeRT-Setup-2.0.0.exe
+  1. Double-click the  QuakeRT-Setup  file you downloaded.
 
   2. Windows may show a blue box saying "Windows protected your PC".
      This happens with any program that is not from a big company.

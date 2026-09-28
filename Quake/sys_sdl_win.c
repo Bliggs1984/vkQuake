@@ -538,6 +538,25 @@ static void Sys_GetBasedir (char *argv0, char *dst, size_t dstsize)
 	char  *tmp;
 	size_t rc;
 
+#ifdef RT_RENDERER
+	// RT: RayTracedGL1 and the rt_* files load shaders/materials from "ovrd/" relative to the working directory,
+	// and Steam launch options start the exe in Steam's Quake folder. Always run from the exe's own folder,
+	// so a Steam launch behaves like the desktop shortcut (Quake data is still found by Steam/GOG/Epic detection).
+	{
+		wchar_t exepath[MAX_PATH];
+		DWORD	len = GetModuleFileNameW (NULL, exepath, MAX_PATH);
+		if (len > 0 && len < MAX_PATH)
+		{
+			wchar_t *slash = wcsrchr (exepath, L'\\');
+			if (slash)
+			{
+				*slash = 0;
+				SetCurrentDirectoryW (exepath);
+			}
+		}
+	}
+#endif
+
 	rc = GetCurrentDirectory (dstsize, dst);
 	if (rc == 0 || rc > dstsize)
 		Sys_Error ("Couldn't determine current directory");

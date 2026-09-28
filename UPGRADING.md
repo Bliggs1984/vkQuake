@@ -18,9 +18,9 @@ doesn't code: Bliggs1984 directed and play-tested it, Claude wrote the code.
 
 ## Running it
 
-1. Easiest: run `QuakeRT-Setup-2.0.0.exe` from the Releases page. It installs per user (no admin rights
+1. Easiest: run `QuakeRT-Setup-<version>.exe` from the Releases page. It installs per user (no admin rights
    needed, except for the Microsoft Visual C++ runtime if it's missing) and adds desktop and Start menu
-   shortcuts. Alternatively, unzip `quake-rt-2.0.0-win64.zip` anywhere, for example `C:\Games\QuakeRT`.
+   shortcuts. Alternatively, unzip `quake-rt-<version>-win64.zip` anywhere, for example `C:\Games\QuakeRT`.
    Do **not** copy the files into Steam's Quake folder.
 2. Start Quake RT (or `vkQuake.exe`). It finds your Quake installation by itself. If both the re-release and original data
    are present you are asked which to play; `-prefremaster` on the command line skips the question.
@@ -51,6 +51,12 @@ or `rt_upscale_fsr2` (0 off, 1 native AA / DLAA, 2 quality, 3 balanced, 4 perfor
 New in 2.0: a fresh install starts on DLSS Quality with the DLSS 4.5 model (preset M). On a GPU without DLSS
 the same quality level moves to FSR 2 automatically. The console log names the upscaler in use
 (`Upscaler: NVIDIA DLSS, Quality, preset DLSS 4.5 (M)`).
+
+## 2.0.1
+
+- Fixed: launching through Steam's Play button (with the launch option) failed with
+  `RG_ERROR_CANT_FIND_BLUE_NOISE`. Steam starts the game in its own Quake folder, and the ray tracer looked
+  for its `ovrd` folder there. The game now always runs from its own folder.
 
 ## What changed for players coming from 1.1.0
 
