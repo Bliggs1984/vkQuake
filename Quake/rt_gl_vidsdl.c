@@ -188,8 +188,8 @@ task_handle_t prev_end_rendering_task = INVALID_TASK_HANDLE;
 	CVAR_DEF_T (rt_sharpen, "0") \
 	CVAR_DEF_T (rt_renderscale, "0") \
 	CVAR_DEF_T (rt_vintage, "0") \
-	CVAR_DEF_T (rt_upscale_fsr2, "3") \
-	CVAR_DEF_T (rt_upscale_dlss, "0") \
+	CVAR_DEF_T (rt_upscale_fsr2, "0") \
+	CVAR_DEF_T (rt_upscale_dlss, "2") \
 	CVAR_DEF_T (rt_dlss_preset, "3") \
 	\
 	CVAR_DEF_T (rt_sensit_dir, "0.4") \
@@ -909,10 +909,55 @@ static qboolean UpscaleOptionToResolutionMode (int option, RgRenderResolutionMod
 	}
 }
 
+static const char *GetUpscalerOptionName (int i, RgRenderUpscaleTechnique technique);
+static const char *GetDlssPresetOptionName (int preset);
+
 static void UpscaleCvarsToRtgl (RgDrawFrameRenderResolutionParams *pDst)
 {
+	static int dlss_available = -1;
+	static int fsr2_available = -1;
+	static int logged_dlss = -1, logged_fsr2 = -1, logged_preset = -1;
+
+	if (dlss_available < 0)
+	{
+		dlss_available = rgIsRenderUpscaleTechniqueAvailable (vulkan_globals.instance, RG_RENDER_UPSCALE_TECHNIQUE_NVIDIA_DLSS) ? 1 : 0;
+		fsr2_available = rgIsRenderUpscaleTechniqueAvailable (vulkan_globals.instance, RG_RENDER_UPSCALE_TECHNIQUE_AMD_FSR2) ? 1 : 0;
+	}
+
+	// DLSS is the default; without a GeForce RTX (or nvngx_dlss.dll) hand the same quality level to FSR 2
+	if (!dlss_available && CVAR_TO_INT32 (rt_upscale_dlss) != 0)
+	{
+		if (fsr2_available && CVAR_TO_INT32 (rt_upscale_fsr2) == 0)
+		{
+			Cvar_SetValueQuick (&rt_upscale_fsr2, CVAR_TO_INT32 (rt_upscale_dlss));
+		}
+		Cvar_SetValueQuick (&rt_upscale_dlss, 0);
+	}
+
 	int nvDlss = CVAR_TO_INT32 (rt_upscale_dlss);
 	int amdFsr = CVAR_TO_INT32 (rt_upscale_fsr2);
+
+	if (nvDlss != logged_dlss || amdFsr != logged_fsr2 || CVAR_TO_INT32 (rt_dlss_preset) != logged_preset)
+	{
+		logged_dlss = nvDlss;
+		logged_fsr2 = amdFsr;
+		logged_preset = CVAR_TO_INT32 (rt_dlss_preset);
+
+		if (amdFsr > 0)
+		{
+			Con_Printf ("Upscaler: AMD FSR 2, %s\n", GetUpscalerOptionName (amdFsr, RG_RENDER_UPSCALE_TECHNIQUE_AMD_FSR2));
+		}
+		else if (nvDlss > 0)
+		{
+			Con_Printf (
+				"Upscaler: NVIDIA DLSS, %s, preset %s\n", GetUpscalerOptionName (nvDlss, RG_RENDER_UPSCALE_TECHNIQUE_NVIDIA_DLSS),
+				GetDlssPresetOptionName (CLAMP (0, logged_preset, RT_DLSS_PRESET__COUNT - 1)));
+		}
+		else
+		{
+			Con_Printf ("Upscaler: off\n");
+		}
+	}
 
 	if (UpscaleOptionToResolutionMode (nvDlss, &pDst->resolutionMode))
 	{

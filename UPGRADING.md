@@ -39,6 +39,10 @@ or `rt_upscale_fsr2` (0 off, 1 native AA / DLAA, 2 quality, 3 balanced, 4 perfor
 6 custom via `rt_renderscale`) and the DLSS model with `rt_dlss_preset` (0 auto, 1 DLSS 4 transformer K,
 2 DLSS 4.5 transformer L, 3 DLSS 4.5 transformer M). The Video options menu is the ray-traced one from 1.1.0.
 
+New in 2.0: a fresh install starts on DLSS Quality with the DLSS 4.5 model (preset M). On a GPU without DLSS
+the same quality level moves to FSR 2 automatically. The console log names the upscaler in use
+(`Upscaler: NVIDIA DLSS, Quality, preset DLSS 4.5 (M)`).
+
 ## What changed for players coming from 1.1.0
 
 - Base engine 1.20.3 → 1.36.0. Expect vanilla 1.36 behaviour for everything that is not rendering:
