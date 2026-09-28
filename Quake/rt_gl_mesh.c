@@ -33,13 +33,17 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 //                   by the entity transform in rt_r_alias.c), normal = r_avertexnormals[],
 //                   texCoord = (st + 0.5) / skin size, packedColor = white.
 //
-// Only the classic .mdl path (PV_QUAKE1) is meshed for RT. MD3/MD5 are out of scope
-// (their GLMesh_UploadBuffers calls are no-ops here).
+// MD5 replacement models (the 2021 re-release's enhanced monsters, weapons and items) keep
+// a CPU copy per surface in hdr->rtskinned (see GLMesh_UploadBuffers); RT_SkinAliasSurface
+// skins it on the CPU every frame with the same maths as the vanilla md5.vert shader.
+// MD3 is not supported under RT (its GLMesh_UploadBuffers call is a no-op).
 
 #include "quakedef.h"
 
 #define NUMVERTEXNORMALS 162
 extern float r_avertexnormals[NUMVERTEXNORMALS][3];
+
+extern cvar_t rt_classic_render;
 
 // gl_model.c model registry (not exported through a header in 1.36)
 extern qmodel_t mod_known[MAX_MODELS];
@@ -222,12 +226,25 @@ void GL_MakeAliasModelDisplayLists (qmodel_t *m, aliashdr_t *paliashdr)
 	TEMP_FREE (desc);
 }
 
+static void RT_FreeSkinnedMesh (aliashdr_t *hdr)
+{
+	rt_skinnedmesh_t *sk = hdr->rtskinned;
+	if (!sk)
+		return;
+	Mem_Free (sk->indices);
+	Mem_Free (sk->vertexes);
+	Mem_Free (sk->joints);
+	Mem_Free (sk);
+	hdr->rtskinned = NULL;
+}
+
 /*
 ================
 GLMesh_UploadBuffers
 
-1.36 entry point used by the MD3/MD5 loaders. Under RT only the classic .mdl path is
-meshed (see GL_MakeAliasModelDisplayLists), so this is a no-op.
+1.36 entry point used by the MD3/MD5 loaders once per surface. The loaders free their
+vertex and joint arrays afterwards, so under RT an MD5 surface is copied into
+hdr->rtskinned for RT_SkinAliasSurface. MD3 is not meshed for RT.
 ================
 */
 void GLMesh_UploadBuffers (
@@ -235,28 +252,174 @@ void GLMesh_UploadBuffers (
 	int num_skeleton_indexes)
 {
 	(void)mod;
-	(void)hdr;
-	(void)indexes;
-	(void)vertexes;
 	(void)desc;
-	(void)joints;
 	(void)skeleton_indexes;
 	(void)num_skeleton_indexes;
+
+	if (isDedicated)
+		return;
+	if (hdr->poseverttype != PV_MD5 && hdr->poseverttype != PV_MD5_8)
+		return;
+	// no .md5anim: the loader has no joint matrices to give us, so let the .mdl draw instead
+	if (!joints || hdr->numframes <= 0 || hdr->numjoints <= 0 || !hdr->numindexes || !hdr->numverts)
+		return;
+
+	RT_FreeSkinnedMesh (hdr);
+
+	const size_t vertex_size = (hdr->poseverttype == PV_MD5_8) ? sizeof (md5vert8_t) : sizeof (md5vert_t);
+
+	rt_skinnedmesh_t *sk = (rt_skinnedmesh_t *)Mem_Alloc (sizeof (rt_skinnedmesh_t));
+	sk->numverts = hdr->numverts;
+	sk->numindexes = hdr->numindexes;
+	sk->numjoints = hdr->numjoints;
+	sk->numposes = hdr->numframes;
+
+	sk->indices = (uint32_t *)Mem_Alloc (sizeof (uint32_t) * sk->numindexes);
+	for (int k = 0; k < sk->numindexes / 3; k++)
+	{
+		sk->indices[k * 3 + 0] = indexes[k * 3 + 2];
+		sk->indices[k * 3 + 1] = indexes[k * 3 + 1];
+		sk->indices[k * 3 + 2] = indexes[k * 3 + 0];
+	}
+
+	sk->vertexes = (byte *)Mem_Alloc (vertex_size * sk->numverts);
+	memcpy (sk->vertexes, vertexes, vertex_size * sk->numverts);
+
+	sk->joints = (jointpose_t *)Mem_Alloc (sizeof (jointpose_t) * sk->numjoints * sk->numposes);
+	memcpy (sk->joints, joints, sizeof (jointpose_t) * sk->numjoints * sk->numposes);
+
+	hdr->rtskinned = sk;
+}
+
+/*
+================
+RT_SkinAliasSurface
+
+CPU version of md5.vert + skinning.inc: skin an MD5 surface between two animation poses.
+Skinning is linear in the joint matrices, so blending the two poses' matrices first and
+skinning once gives the same result as the shader's mix of two skinned positions.
+Returns a scratch buffer valid until the next call.
+================
+*/
+static float RT_AvertexNormalDot (const float *n, const float *shadevector)
+{
+	float dot = DotProduct (n, shadevector);
+	return dot < 0.0f ? 1.0f + dot * (13.0f / 44.0f) : 1.0f + dot;
+}
+
+const RgVertex *RT_SkinAliasSurface (const aliashdr_t *hdr, int pose1, int pose2, float blend, const float *shadevector, const float *lightcolor)
+{
+	static RgVertex	   *out = NULL;
+	static size_t		out_numverts = 0;
+	static jointpose_t *mats = NULL;
+	static size_t		mats_numjoints = 0;
+
+	const rt_skinnedmesh_t *sk = hdr->rtskinned;
+	assert (sk != NULL);
+
+	if ((size_t)sk->numverts > out_numverts)
+	{
+		out_numverts = (sk->numverts + 4095) & ~4095;
+		Mem_Free (out);
+		out = (RgVertex *)Mem_Alloc (out_numverts * sizeof (RgVertex));
+	}
+	if ((size_t)sk->numjoints > mats_numjoints)
+	{
+		mats_numjoints = (sk->numjoints + 255) & ~255;
+		Mem_Free (mats);
+		mats = (jointpose_t *)Mem_Alloc (mats_numjoints * sizeof (jointpose_t));
+	}
+
+	pose1 = CLAMP (0, pose1, sk->numposes - 1);
+	pose2 = CLAMP (0, pose2, sk->numposes - 1);
+
+	const jointpose_t *j1 = sk->joints + (size_t)pose1 * sk->numjoints;
+	const jointpose_t *j2 = sk->joints + (size_t)pose2 * sk->numjoints;
+	for (int j = 0; j < sk->numjoints; j++)
+		for (int k = 0; k < 12; k++)
+			mats[j].mat[k] = j1[j].mat[k] + (j2[j].mat[k] - j1[j].mat[k]) * blend;
+
+	const qboolean vertex_lighting = CVAR_TO_BOOL (rt_classic_render);
+	const qboolean eight = (hdr->poseverttype == PV_MD5_8);
+	const int	   count = eight ? NUM_JOINT_INFLUENCES_8_WEIGHT : NUM_JOINT_INFLUENCES_4_WEIGHT;
+
+	for (int v = 0; v < sk->numverts; v++)
+	{
+		const byte	*weights, *indices;
+		const float *px, *py, *pz, *norm, *st;
+		if (eight)
+		{
+			const md5vert8_t *in = (const md5vert8_t *)sk->vertexes + v;
+			weights = in->joint_weights, indices = in->joint_indices;
+			px = in->joint_position_x, py = in->joint_position_y, pz = in->joint_position_z;
+			norm = in->norm, st = in->st;
+		}
+		else
+		{
+			const md5vert_t *in = (const md5vert_t *)sk->vertexes + v;
+			weights = in->joint_weights, indices = in->joint_indices;
+			px = in->joint_position_x, py = in->joint_position_y, pz = in->joint_position_z;
+			norm = in->norm, st = in->st;
+		}
+
+		float weight_sum = 0.0f;
+		for (int i = 0; i < count; i++)
+			weight_sum += weights[i];
+		const float weight_scale = weight_sum > 0.0f ? 1.0f / weight_sum : 0.0f;
+
+		vec3_t pos = {0, 0, 0}, nrm = {0, 0, 0};
+		for (int i = 0; i < count; i++)
+		{
+			const float w = weights[i] * weight_scale;
+			const float *m = mats[indices[i] < sk->numjoints ? indices[i] : 0].mat;
+			for (int r = 0; r < 3; r++)
+			{
+				pos[r] += m[r * 4 + 0] * px[i] + m[r * 4 + 1] * py[i] + m[r * 4 + 2] * pz[i] + m[r * 4 + 3] * w;
+				nrm[r] += w * (m[r * 4 + 0] * norm[0] + m[r * 4 + 1] * norm[1] + m[r * 4 + 2] * norm[2]);
+			}
+		}
+		VectorNormalize (nrm);
+
+		RgVertex *dst = &out[v];
+		dst->position[0] = pos[0];
+		dst->position[1] = pos[1];
+		dst->position[2] = pos[2];
+		dst->normal[0] = nrm[0];
+		dst->normal[1] = nrm[1];
+		dst->normal[2] = nrm[2];
+		dst->texCoord[0] = st[0];
+		dst->texCoord[1] = st[1];
+
+		if (vertex_lighting)
+		{
+			const float dot = RT_AvertexNormalDot (nrm, shadevector);
+			dst->packedColor = RT_PackColorToUint32_FromFloat01 (lightcolor[0] * dot, lightcolor[1] * dot, lightcolor[2] * dot, 1.0f);
+		}
+		else
+		{
+			dst->packedColor = RT_PACKED_COLOR_WHITE;
+		}
+	}
+
+	return out;
 }
 
 /*
 ================
 GLMesh_DeleteMeshBuffers
 
-1.36 signature takes only the aliashdr_t. The RT arrays live on the qmodel_t, so we
-look up the owning model by its PV_QUAKE1 extradata pointer; headers for other pose
-vertex types (MD3/MD5) never had RT arrays built and are ignored.
+1.36 signature takes only the aliashdr_t. MD5 surfaces own their hdr->rtskinned copy;
+the .mdl arrays live on the qmodel_t, so the owning model is looked up by its PV_QUAKE1
+extradata pointer.
 ================
 */
 void GLMesh_DeleteMeshBuffers (aliashdr_t *mainhdr)
 {
 	if (!mainhdr)
 		return;
+
+	for (aliashdr_t *hdr = mainhdr; hdr != NULL; hdr = hdr->nextsurface)
+		RT_FreeSkinnedMesh (hdr);
 
 	for (int i = 0; i < mod_numknown; i++)
 	{

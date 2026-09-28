@@ -629,17 +629,16 @@ static qmodel_t *Mod_LoadModel (qmodel_t *mod, qboolean crash)
 	}
 
 	const bool mod_is_mdl = (strcmp (COM_FileGetExtension (mod->name), "mdl") == 0);
-#ifdef RT_RENDERER
-	// TODO(rt): MD3/MD5 replacement models are Stage 5; RT only meshes the classic .mdl (rt_gl_mesh.c),
-	// so never pick up an enhanced replacement and always load the .mdl fallback.
-	const bool load_enhanced_model = false;
-	(void)mod_is_mdl;
-#else
 	const bool load_enhanced_model = mod_is_mdl && r_enhancedmodels.value;
+#ifdef RT_RENDERER
+	// RT skins MD5 replacements on the CPU (rt_gl_mesh.c) but has no MD3 path: keep the .mdl instead
+	const bool load_enhanced_md3 = false;
+#else
+	const bool load_enhanced_md3 = load_enhanced_model;
 #endif
 
 	// 2. Find MDL "enhanced" complementary models, if any:
-	if (load_enhanced_model && r_allow_replacement_md3models.value)
+	if (load_enhanced_md3 && r_allow_replacement_md3models.value)
 	{
 		// newname is the .mdl model with extension changed to .md3:
 		COM_StripExtension (mod->name, md3_name, sizeof (md3_name));
@@ -5376,9 +5375,26 @@ static void Mod_LoadMDXSkinTask (int i, load_skin_MDX_task_args_t *args)
 	if (data) // load external image
 	{
 #ifdef RT_RENDERER
-		// TODO(rt): MD3/MD5 are Stage 5; material name is just the texture path for now.
+		// an 8-bit skin with fullbright pixels gets one RTGL1 material with an emission mask, as for .mdl skins:
+		// the albedo and the _luma image below are loaded between TexMgr_RT_SpecialStart/End
+		qboolean rt_special = false;
+		if (fmt == SRC_INDEXED)
+		{
+			for (size_t j = 0; j < fwidth * fheight; j++)
+			{
+				if (((byte *)data)[j] > 223)
+				{
+					rt_special = true;
+					break;
+				}
+			}
+		}
+		char rtname[MAX_QPATH];
+		COM_StripExtension (texname, rtname, sizeof (rtname));
+		if (rt_special)
+			TexMgr_RT_SpecialStart (CVAR_TO_FLOAT (rt_model_rough), CVAR_TO_FLOAT (rt_model_metal));
 		surf->gltextures[skin_index][f] =
-			TexMgr_LoadImage (texname, mod, texname, fwidth, fheight, fmt, data, texname, 0, TEXPREF_ALPHA | TEXPREF_NOBRIGHT | TEXPREF_MIPMAP);
+			TexMgr_LoadImage (rtname, mod, texname, fwidth, fheight, fmt, data, texname, 0, TEXPREF_ALPHA | TEXPREF_NOBRIGHT | TEXPREF_MIPMAP);
 #else
 		surf->gltextures[skin_index][f] =
 			TexMgr_LoadImage (mod, texname, fwidth, fheight, fmt, data, texname, 0, TEXPREF_ALPHA | TEXPREF_NOBRIGHT | TEXPREF_MIPMAP);
@@ -5412,6 +5428,8 @@ static void Mod_LoadMDXSkinTask (int i, load_skin_MDX_task_args_t *args)
 					surf->fbtextures[skin_index][f] = TexMgr_LoadImage (
 						NULL, mod, va ("%s_luma", basic_texname), fwidth, fheight, SRC_INDEXED, data, texname, 0,
 						TEXPREF_RT_IS_EMISSIVE | TEXPREF_ALPHA | TEXPREF_MIPMAP | TEXPREF_FULLBRIGHT);
+					TexMgr_RT_SpecialEnd ();
+					rt_special = false;
 #else
 					surf->fbtextures[skin_index][f] = TexMgr_LoadImage (
 						mod, va ("%s_luma", basic_texname), fwidth, fheight, SRC_INDEXED, data, texname, 0,

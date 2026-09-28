@@ -390,6 +390,19 @@ void GLMesh_UploadBuffers (
 void GLMesh_DeleteAllMeshBuffers (void);
 void GLMesh_DeleteMeshBuffers (aliashdr_t *mainhdr);
 
+// MD5 surface kept on the CPU (hdr->rtskinned) and skinned every frame, since RTGL1 takes final vertices
+typedef struct rt_skinnedmesh_s
+{
+	int			 numverts;
+	int			 numindexes;
+	int			 numjoints;
+	int			 numposes;
+	uint32_t	*indices;  // reversed winding, like the .mdl arrays
+	byte		*vertexes; // md5vert_t or md5vert8_t (hdr->poseverttype)
+	jointpose_t *joints;   // numposes * numjoints absolute joint matrices (3x4 row-major)
+} rt_skinnedmesh_t;
+const RgVertex *RT_SkinAliasSurface (const aliashdr_t *hdr, int pose1, int pose2, float blend, const float *shadevector, const float *lightcolor);
+
 int R_LightPoint (vec3_t p, lightcache_t *cache, vec3_t *lightcolor);
 void RT_ParseElights (void);
 void RT_UploadAllElights (void);

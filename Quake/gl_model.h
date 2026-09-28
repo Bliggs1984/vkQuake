@@ -397,6 +397,9 @@ typedef struct aliashdr_s
 	int					num_skeleton_indexes;
 	VkBuffer			skeleton_index_buffer;
 	glheapallocation_t *skeleton_index_allocation;
+#ifdef RT_RENDERER
+	struct rt_skinnedmesh_s *rtskinned; // MD5 surface: CPU copy skinned per frame by rt_r_alias.c (rt_gl_mesh.c)
+#endif
 	maliasframedesc_t	frames[1]; // variable sized
 } aliashdr_t;
 

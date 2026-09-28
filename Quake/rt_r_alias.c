@@ -211,11 +211,33 @@ Based on code by MH from RMQEngine
 */
 static void GL_DrawAliasFrame (
 	cb_context_t *cbx, entity_t *e, aliashdr_t *paliashdr, lerpdata_t lerpdata, gltexture_t *tx, float entity_alpha,
-	qboolean alphatest, vec3_t shadevector, vec3_t lightcolor, int entuniqueid)
+	qboolean alphatest, vec3_t shadevector, vec3_t lightcolor, int entuniqueid, int surfindex)
 {
 
 	// poses the same means either 1. the entity has paused its animation, or 2. r_lerpmodels is disabled
     float blend = lerpdata.pose1 != lerpdata.pose2 ? lerpdata.blend : 0;
+
+	// .mdl: per-pose vertex arrays on the qmodel_t; MD5 surface: skinned on the CPU (rt_gl_mesh.c)
+	const RgVertex *vertices;
+	uint32_t		vertexcount, indexcount;
+	const uint32_t *indices;
+	if (paliashdr->rtskinned)
+	{
+		vertices = RT_SkinAliasSurface (paliashdr, lerpdata.pose1, lerpdata.pose2, blend, shadevector, lightcolor);
+		vertexcount = paliashdr->rtskinned->numverts;
+		indices = paliashdr->rtskinned->indices;
+		indexcount = paliashdr->rtskinned->numindexes;
+	}
+	else
+	{
+		vertices = GetPoseVertices (e->model, paliashdr, lerpdata.pose1, lerpdata.pose2, blend, shadevector, lightcolor);
+		vertexcount = paliashdr->numverts_vbo;
+		indices = e->model->rtindices;
+		indexcount = paliashdr->numindexes;
+	}
+
+	// several MD5 surfaces per entity: each needs its own RTGL1 id (motion vectors are matched by id)
+	const uint64_t uniqueid = RT_GetAliasModelUniqueId (entuniqueid) | ((uint64_t)surfindex << 40);
 
 	qboolean rasterize = entity_alpha < 1.0f;
 	qboolean isfirstperson = (e == &cl.viewent);
@@ -230,7 +252,7 @@ static void GL_DrawAliasFrame (
 		RT_FIXUP_LIGHT_INTENSITY (color, true);
 
 		RgSphericalLightUploadInfo light_info = {
-			.uniqueID = RT_GetAliasModelUniqueId (entuniqueid),
+			.uniqueID = uniqueid,
 			.color = {color[0], color[1], color[2]},
 			.position = {lerpdata.origin[0], lerpdata.origin[1], lerpdata.origin[2] + tx->rtupoffset },
 			.radius = METRIC_TO_QUAKEUNIT (CVAR_TO_FLOAT (rt_dlight_radius)),
@@ -254,10 +276,10 @@ static void GL_DrawAliasFrame (
 
 		RgRasterizedGeometryUploadInfo info = {
 			.renderType = RG_RASTERIZED_GEOMETRY_RENDER_TYPE_DEFAULT,
-			.vertexCount = paliashdr->numverts_vbo,
-			.pVertices = GetPoseVertices (e->model, paliashdr, lerpdata.pose1, lerpdata.pose2, blend, shadevector, lightcolor),
-			.indexCount = paliashdr->numindexes,
-			.pIndices = e->model->rtindices,
+			.vertexCount = vertexcount,
+			.pVertices = vertices,
+			.indexCount = indexcount,
+			.pIndices = indices,
 			.transform = RT_GetAliasModelTransform (e, paliashdr, &lerpdata, isfirstperson),
 			.color = RT_COLOR_WHITE,
 			.material = tx ? tx->rtmaterial : RG_NO_MATERIAL,
@@ -280,7 +302,7 @@ static void GL_DrawAliasFrame (
 		qboolean exact_normals = tx ? tx->rtcustomtextype == RT_CUSTOMTEXTUREINFO_TYPE_EXACT_NORMALS : 0;
 
 		RgGeometryUploadInfo info = {
-			.uniqueID = RT_GetAliasModelUniqueId (entuniqueid),
+			.uniqueID = uniqueid,
 			.flags = 
 			    (is_invis ? RG_GEOMETRY_UPLOAD_IGNORE_REFRACT_AFTER_REFRACT_BIT : 0) |
 			    (exact_normals ? RG_GEOMETRY_UPLOAD_EXACT_NORMALS_BIT : RG_GEOMETRY_UPLOAD_GENERATE_NORMALS_BIT ), 
@@ -292,10 +314,10 @@ static void GL_DrawAliasFrame (
 			    isfirstperson ? RG_GEOMETRY_VISIBILITY_TYPE_FIRST_PERSON :
 		        isviewer ? RG_GEOMETRY_VISIBILITY_TYPE_FIRST_PERSON_VIEWER :
 		        RG_GEOMETRY_VISIBILITY_TYPE_WORLD_0,
-			.vertexCount = paliashdr->numverts_vbo,
-			.pVertices = GetPoseVertices (e->model, paliashdr, lerpdata.pose1, lerpdata.pose2, blend, shadevector, lightcolor),
-			.indexCount = paliashdr->numindexes,
-			.pIndices = e->model->rtindices,
+			.vertexCount = vertexcount,
+			.pVertices = vertices,
+			.indexCount = indexcount,
+			.pIndices = indices,
 			.layerColors = {RT_COLOR_WHITE},
 			.layerBlendingTypes = {RG_GEOMETRY_MATERIAL_BLEND_TYPE_OPAQUE},
 			.geomMaterial = {tx ? tx->rtmaterial : RG_NO_MATERIAL},
@@ -565,7 +587,12 @@ void R_DrawAliasModel (cb_context_t *cbx, entity_t *e, int entuniqueid)
 	//
 	// setup pose/lerp data -- do it first so we don't miss updates due to culling
 	//
-	paliashdr = (aliashdr_t *)Mod_Extradata (e->model);
+	paliashdr = (aliashdr_t *)Mod_Extradata_CheckSkin (e->model, e->skinnum);
+	// an MD5 replacement the RT path could not keep (no .md5anim) draws its .mdl instead
+	if (paliashdr && (paliashdr->poseverttype == PV_MD5 || paliashdr->poseverttype == PV_MD5_8) && !paliashdr->rtskinned)
+		paliashdr = (aliashdr_t *)e->model->extradata[PV_QUAKE1];
+	if (!paliashdr || (paliashdr->poseverttype == PV_QUAKE1 && !e->model->rtvertices) || paliashdr->poseverttype == PV_QUAKE3)
+		return;
 	R_SetupAliasFrame (e, paliashdr, &lerpdata);
 	R_GetEntityLerpedTransform (e, lerpdata.origin, lerpdata.angles);
 
@@ -596,43 +623,51 @@ void R_DrawAliasModel (cb_context_t *cbx, entity_t *e, int entuniqueid)
 	vec3_t shadevector, lightcolor;
 	R_SetupAliasLighting (e, &shadevector, &lightcolor);
 
-	//
-	// set up textures
-	//
-	anim = (int)(cl.time * 10) & 3;
-	skinnum = e->skinnum;
-	if ((skinnum >= paliashdr->numskins) || (skinnum < 0))
+	// draw each surface (MD5 models have one per material; .mdl has one)
+	int surfindex = 0;
+	for (aliashdr_t *hdr = paliashdr; hdr != NULL; hdr = hdr->nextsurface, surfindex++)
 	{
-		Con_DPrintf ("R_DrawAliasModel: no such skin # %d for '%s'\n", skinnum, e->model->name);
-		// ericw -- display skin 0 for winquake compatibility
-		skinnum = 0;
-	}
-	tx = paliashdr->gltextures[skinnum][anim];
-	if (e->colormap != vid.colormap && !gl_nocolors.value)
-		if ((uintptr_t)e >= (uintptr_t)&cl.entities[1] && (uintptr_t)e <= (uintptr_t)&cl.entities[cl.maxclients] && playertextures[e - cl.entities - 1])
-			tx = playertextures[e - cl.entities - 1]; // 1.36: NULL when the player skin could not be recolored (non-indexed); keep the model skin
+		if (hdr != paliashdr && !hdr->rtskinned)
+			continue;
 
-	if (r_fullbright_cheatsafe)
-	{
-		lightcolor[0] = 0.5f;
-		lightcolor[1] = 0.5f;
-		lightcolor[2] = 0.5f;
-	}
-	if (r_lightmap_cheatsafe)
-	{
-		tx = whitetexture;
-		if (r_fullbright.value)
+		//
+		// set up textures
+		//
+		anim = (int)(cl.time * 10) & 3;
+		skinnum = e->skinnum;
+		if ((skinnum >= hdr->numskins) || (skinnum < 0))
 		{
-			lightcolor[0] = 1.0f;
-			lightcolor[1] = 1.0f;
-			lightcolor[2] = 1.0f;
+			Con_DPrintf ("R_DrawAliasModel: no such skin # %d for '%s'\n", skinnum, e->model->name);
+			// ericw -- display skin 0 for winquake compatibility
+			skinnum = 0;
 		}
-	}
+		tx = hdr->gltextures[skinnum][anim];
+		if (e->colormap != vid.colormap && !gl_nocolors.value)
+			if ((uintptr_t)e >= (uintptr_t)&cl.entities[1] && (uintptr_t)e <= (uintptr_t)&cl.entities[cl.maxclients] && playertextures[e - cl.entities - 1])
+				tx = playertextures[e - cl.entities - 1]; // 1.36: NULL when the player skin could not be recolored (non-indexed); keep the model skin
 
-	//
-	// draw it
-	//
-	GL_DrawAliasFrame (cbx, e, paliashdr, lerpdata, tx, entalpha, alphatest, shadevector, lightcolor, entuniqueid);
+		if (r_fullbright_cheatsafe)
+		{
+			lightcolor[0] = 0.5f;
+			lightcolor[1] = 0.5f;
+			lightcolor[2] = 0.5f;
+		}
+		if (r_lightmap_cheatsafe)
+		{
+			tx = whitetexture;
+			if (r_fullbright.value)
+			{
+				lightcolor[0] = 1.0f;
+				lightcolor[1] = 1.0f;
+				lightcolor[2] = 1.0f;
+			}
+		}
+
+		//
+		// draw it
+		//
+		GL_DrawAliasFrame (cbx, e, hdr, lerpdata, tx, entalpha, alphatest, shadevector, lightcolor, entuniqueid, surfindex);
+	}
 }
 
 // johnfitz -- values for shadow matrix
