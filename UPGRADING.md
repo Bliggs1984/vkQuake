@@ -6,6 +6,9 @@ available under ray tracing: SDL3, Steam achievements and rich presence, the Rem
 automatic Steam/GOG/Epic install detection, and the 2021 re-release's expansions (Dimension of the Past,
 Dimension of the Machine) loading without extra setup.
 
+This update was adapted using Claude (Anthropic's AI model) through Claude Code, directed and play-tested by
+Bliggs1984.
+
 ## Requirements
 
 - Windows 10/11 x64, an NVIDIA RTX GPU (DLSS 4.5 is bundled; AMD FSR 2 is available on other Vulkan RT GPUs).

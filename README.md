@@ -7,6 +7,11 @@ Quake RT adds a path-tracing renderer ([RayTracedGL1](https://github.com/sultim-
 [sultim-t/vkquake-rt](https://github.com/sultim-t/vkquake-rt) (the 2022 "Quake: Ray Traced" by Sultim Tsyrendashiev),
 moved from vkQuake 1.20.3 to 1.36.0.
 
+> **Made with AI.** This 2026 update (Quake RT 1.1 and 2.0) was adapted using **[Claude](https://claude.ai)**,
+> Anthropic's AI model, through Claude Code. Claude did the port to vkQuake 1.36, the DLSS 4.5 integration,
+> the MD5 model support, the fixes and the installer, working under Bliggs1984's direction and play-testing.
+> Commits written this way carry a `Co-Authored-By: Claude` line.
+
 ## Download and play
 
 **[Download the installer from Releases](https://github.com/Bliggs1984/vkquake-rt/releases/latest)**:
@@ -61,6 +66,8 @@ fork (vkQuake 1.20.3, DLSS 4.5). `master` is the original 2022 code.
   based on QuakeSpasm, QuakeSpasm-Spiked, FitzQuake and id Software's Quake.
 * [vkquake-rt](https://github.com/sultim-t/vkquake-rt) and [RayTracedGL1](https://github.com/sultim-t/RayTracedGL1):
   Sultim Tsyrendashiev.
+* 2026 update (vkQuake 1.36 port, DLSS 4.5, MD5 models, installer): adapted using Claude (Anthropic) via Claude Code,
+  directed and tested by Bliggs1984.
 * NVIDIA DLSS: NVIDIA Corporation. AMD FSR 2: AMD. Third-party notices are in
   [Packaging/Windows/THIRD_PARTY_NOTICES.txt](Packaging/Windows/THIRD_PARTY_NOTICES.txt).
 

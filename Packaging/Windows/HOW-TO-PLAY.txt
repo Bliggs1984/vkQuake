@@ -116,6 +116,7 @@ Windows Settings > Apps > Installed apps > Quake RT > Uninstall.
 Your saved games stay in %APPDATA%\QuakeRT in case you come back.
 
 
-Quake RT is free, open-source software (GPL). It is not made or supported by
-id Software, Bethesda or NVIDIA. Source code and updates:
+Quake RT is free, open-source software (GPL). This version was adapted
+using Claude, Anthropic's AI, directed and play-tested by Bliggs1984.
+It is not made or supported by id Software, Bethesda or NVIDIA. Source code and updates:
 https://github.com/Bliggs1984/vkquake-rt
