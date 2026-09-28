@@ -1,4 +1,4 @@
-# QuakeRT 2.0.0-dev — upgrading from Quake RT 1.x
+# QuakeRT 2.0.0 — upgrading from Quake RT 1.x
 
 QuakeRT 2.0.0 is the RayTracedGL1 path tracer re-attached to **vkQuake 1.36.0** (the previous releases,
 1.0.x / 1.1.0, were built on vkQuake 1.20.3 from 2022). Everything the engine gained in the meantime is now
@@ -10,15 +10,19 @@ Dimension of the Machine) loading without extra setup.
 
 - Windows 10/11 x64, an NVIDIA RTX GPU (DLSS 4.5 is bundled; AMD FSR 2 is available on other Vulkan RT GPUs).
 - Quake from Steam (2021 re-release or the original). GOG/Epic installs are detected too.
-- Nothing else to install: the zip contains `vkQuake.exe`, `RayTracedGL1.dll`, `nvngx_dlss.dll`, the codec
+- Nothing else to install: the installer (or zip) contains `vkQuake.exe`, `RayTracedGL1.dll`, `nvngx_dlss.dll`, the codec
   DLLs, SDL3, and the `ovrd/` folder with the ray-tracing materials and shaders.
 
 ## Running it
 
-1. Unzip anywhere (for example `C:\Games\QuakeRT`). Do **not** copy the files into Steam's Quake folder.
-2. Start `vkQuake.exe`. It finds your Quake installation by itself. If both the re-release and original data
+1. Easiest: run `QuakeRT-Setup-2.0.0.exe` from the Releases page. It installs per user (no admin rights
+   needed, except for the Microsoft Visual C++ runtime if it's missing) and adds desktop and Start menu
+   shortcuts. Alternatively, unzip `quake-rt-2.0.0-win64.zip` anywhere, for example `C:\Games\QuakeRT`.
+   Do **not** copy the files into Steam's Quake folder.
+2. Start Quake RT (or `vkQuake.exe`). It finds your Quake installation by itself. If both the re-release and original data
    are present you are asked which to play; `-prefremaster` on the command line skips the question.
-3. On displays taller than 1440p a one-time prompt offers to render at 1440p for better frame rates.
+3. The first start is fullscreen at the desktop resolution. On displays taller than 1440p a one-time
+   prompt offers 1440p instead, for better frame rates. `-window` starts in a window.
 
 Config, saves and the console log now live in `%APPDATA%\QuakeRT\` (vanilla vkQuake 1.36 uses
 `%APPDATA%\vkQuake\`, so the two builds keep separate settings), not next to the executable. Add `-condebug`
@@ -30,7 +34,9 @@ The engine loads Steam's API whenever it is playing data from a Steam install an
 achievements unlock from a direct launch. To also get the overlay, playtime tracking and the "Now playing"
 status, launch it through Steam instead: Steam library → Quake → Properties → Launch Options:
 
-    "C:\Games\QuakeRT\vkQuake.exe" %command%
+    "<install folder>\vkQuake.exe" -prefremaster %command%
+
+The installer writes this line, with the real path, to "Steam launch option.txt" (Start menu → Quake RT).
 
 ## Ray-tracing settings
 

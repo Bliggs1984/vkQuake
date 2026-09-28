@@ -1,7 +1,7 @@
 # Tier 2 port: RayTracedGL1 on vkQuake 1.36.0 (`rt-1.36`)
 
 Working notes for re-attaching the RT renderer (2022 fork, base 1.20.3) to vkQuake 1.36.0.
-Spec: `C:\Utils\AIstuff\QuakeRT\MODERNISATION_ASSESSMENT.md` §5 + approved /spec (2026-08-31).
+Plan: tier 2 of the 2026 modernisation assessment (rebase onto vkQuake 1.36.0), approved 2026-08-31.
 The 2022 RT code is on branch `modernise-2026`; retrieve any original with
 `git show modernise-2026:Quake/<file>`.
 
@@ -50,23 +50,22 @@ Upstream 1.36 features that interact with RT and need decisions during the port:
 
 ## Status
 
-- [x] Stage 0: vanilla 1.36.0 builds (v143), SDL 3.4.12, Steam API up, achievement fired (Brett, 31 Aug)
+- [x] Stage 0: vanilla 1.36.0 builds (v143), SDL 3.4.12, Steam API up, achievement fired (31 Aug)
 - [x] steam.c multi-library fix (`e0d31a7`)
 - [x] Submodule + patches + ovrd assets on `rt-1.36`
 - [x] RT-Release build configuration in vcxproj + sln (RT_RENDERER, RTGL1 lib, no PCH, linker .map). No RT-Debug yet.
 - [x] All 16 `rt_*.c` compile clean under /WX; shared files guarded (`#ifdef RT_RENDERER`, vanilla Release still builds 0 errors)
 - [x] **RT-Release links and BOOTS (2026-09-04)**: RTGL1 instance up (DLSS + FSR2 detected), console/menu, demo1
-  plays with ray-traced world, lightmapped->RT lights, HUD, viewmodel. Screenshot: `tools_tmp/smoke_menu5.png`.
-  = **Stage 1 checkpoint reached; Stage 2/3 visibly working on first boot** (needs Brett's 10-min play test).
+  plays with ray-traced world, lightmapped->RT lights, HUD, viewmodel.
+  = **Stage 1 checkpoint reached; Stage 2/3 visibly working on first boot** (10-minute play test passed).
 - [x] Stage 2/3 (2026-09-05): fork's behavioural RT changes re-applied to 17 shared files under RT_RENDERER
   (`git diff 1.20.3 modernise-2026 -- Quake/<file>` was the worklist; upstream remote + tag 1.20.3 in the repo);
   rt_*.c audited against 1.36 semantics (24 fixes, see commit 867d8679). hipnotic/rogue/mg1 render from the
-  Steam re-release data; id1 demo loop runs. Brett's in-game verification of the Stage 3 items still pending.
+  Steam re-release data; id1 demo loop runs. Stage 3 items verified in game on 2026-09-28 (menus, HUD detail, muzzle flash, co-op, F switch).
 - [~] Stage 4: UPGRADING.md written; Steam API verified loading in the RT build (steam_api64 + steamclient64
   in-process when basedir is under the Steam install); RT config moved to `%APPDATA%\QuakeRT`; zip built.
-  2026-09-28: installed build at C:/Games/QuakeRT loads steam_api64, steamclient64 and Steam's overlay Vulkan
+  2026-09-28: an installed build loads steam_api64, steamclient64 and Steam's overlay Vulkan
   layer in-process; achievements use vanilla 1.36's unchanged svc_achievement path (fired in Stage 0).
-  Remaining: point the Steam launch option at the RT exe (Steam must be closed to edit it).
 - [x] DLSS 4.5 default (2026-09-28): fresh config starts on DLSS Quality, preset M; FSR 2 fallback without DLSS;
   `Upscaler: ...` console line. Verified nvngx_dlss.dll loaded and the log line on the RTX 5080.
 - [x] Stage 5 (2026-09-28): MD5 enhanced models under RT (re-release id1: 59 models, mg3: 5). Verified soldier,
@@ -86,7 +85,7 @@ Upstream 1.36 features that interact with RT and need decisions during the port:
 ### Crash triage recipe (no debugger installed)
 
 Windows Event Log gives module + offset; RT-Release now writes `Build-vkQuake\x64\RT-Release\vkQuake.map`.
-`tools_tmp/run_smoke.ps1 -Shot x.png` launches the smoke build, screenshots the game window, dumps the log.
+A local smoke script launched the build, screenshotted the game window and dumped the log.
 Symbolize: find the largest map address <= 0x140000000 + offset (see the PowerShell one-liner in the session log).
 
 ### Known oddities
@@ -112,11 +111,11 @@ Symbolize: find the largest map address <= 0x140000000 + offset (see the PowerSh
 - `scripts/build.ps1` now builds `RT-<Configuration>` with `-p:PlatformToolset=v143`, reads
   `QUAKERT_VERSION` from `quakever.h` (2.0.0-dev; RT banner "QuakeRT x (vkQuake 1.36.0)"), copies only
   THIRD_PARTY_NOTICES.txt + vkQuakeFullscreen.bat from Packaging/Windows.
-- Diagnostic scripts in `C:\Utils\AIstuff\QuakeRT\tools_tmp\`: `rtcompile.ps1` (rt_*.c, RT defines),
+- Local diagnostic scripts (not in the repo): `rtcompile.ps1` (rt_*.c, RT defines),
   `vkcompile.ps1` (shared files, vanilla defines), `rtsweep.ps1` (shared files in the RT-Release set, RT
   defines), `rtset.py` (RT-Release inclusion list from the vcxproj).
 
-### Data-set smoke tests under RT (2026-09-04, `tools_tmp/run_smoke.ps1`, Steam rerelease data)
+### Data-set smoke tests under RT (2026-09-04, Steam re-release data)
 
 | Data | Map | Result |
 |---|---|---|

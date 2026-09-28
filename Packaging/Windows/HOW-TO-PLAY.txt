@@ -1,0 +1,121 @@
+QUAKE RT - HOW TO INSTALL AND PLAY
+==================================
+
+Quake RT is the original Quake with modern ray-traced lighting (real-time
+light, shadows and reflections) and NVIDIA DLSS. It uses your own copy of
+Quake, so you need to own the game.
+
+
+WHAT YOU NEED
+-------------
+
+  * A Windows 10 or Windows 11 PC.
+  * An NVIDIA RTX graphics card (RTX 2060 or newer). Recent AMD cards
+    (RX 6000 series or newer) should also work. Older GTX cards will NOT work.
+  * Quake installed from Steam (it is the normal "Quake" you buy on Steam
+    today). Quake from GOG or the Epic Games Store also works.
+  * Up-to-date graphics drivers. For NVIDIA, open the "NVIDIA App" and click
+    "Download" on the Drivers page if there is an update.
+
+
+INSTALLING
+----------
+
+  1. Double-click  QuakeRT-Setup-2.0.0.exe
+
+  2. Windows may show a blue box saying "Windows protected your PC".
+     This happens with any program that is not from a big company.
+     Click  "More info", then click  "Run anyway".
+
+  3. Click  Next, then Install, then Finish.
+     If it asks to install "Microsoft Visual C++", click Yes. That is a
+     standard Microsoft component that many games need.
+
+That's it. You now have a "Quake RT" icon on your desktop and in the Start menu.
+
+
+PLAYING
+-------
+
+  1. Start Steam first (so your Quake achievements unlock).
+  2. Double-click the "Quake RT" icon.
+  3. The first time, if you have a 4K screen, it asks if you want to play
+     at 1440p. Click "Yes" - it runs much faster and still looks great.
+  4. Pick "Campaign" in the menu to start a new game.
+
+The first start can take up to a minute while it gets things ready.
+
+
+CONTROLS
+--------
+
+  Move ................ W A S D
+  Look / aim .......... Mouse
+  Shoot ............... Left mouse button
+  Jump ................ Space
+  Run ................. Shift
+  Swim down ........... Ctrl
+  Change weapon ....... 1 to 8, or the mouse wheel
+  Menu / pause ........ Esc
+  Quick save .......... F6
+  Quick load .......... F9
+  Ray tracing on/off .. F   (press it to see the difference!)
+
+You can change any key in  Options > Key Bindings.
+
+
+IF IT RUNS SLOWLY
+-----------------
+
+Press Esc and go to  Options > Video. Then try these, one at a time:
+
+  * If you have an RTX 2000 or RTX 3000 series card: change "DLSS Model"
+    to  DLSS 4 (K).  (The newer 4.5 model is made for RTX 4000/5000 cards.)
+  * Change "Nvidia DLSS" from Quality to  Balanced  or  Performance.
+
+Press Esc to go back to the game.
+
+
+IF SOMETHING GOES WRONG
+-----------------------
+
+  * It says it can't find Quake:
+      Install Quake from Steam, start it once from Steam, then try again.
+
+  * It crashes, shows an error about Vulkan or ray tracing, or the screen
+    stays black:
+      Update your graphics driver (see "What you need" above) and restart
+      the PC. If you have an older GTX card, it won't work, sorry.
+
+  * Your saved games and settings are kept in:
+      %APPDATA%\QuakeRT
+      (paste that into the address bar of a File Explorer window)
+
+
+EXTRAS
+------
+
+  * The expansion packs that come with Steam's Quake (Scourge of Armagon,
+    Dissolution of Eternity, Dimension of the Past, Dimension of the Machine,
+    Dawn of the Machine) are in the  Mods  menu.
+
+  * Want to start Quake RT from Steam's Play button (with the Steam overlay
+    and "Playing Quake" showing for your friends)?
+      1. Start menu > Quake RT > "Steam launch option". A small text file
+         opens with one line in it. Copy that whole line.
+      2. In Steam, right-click Quake > Properties. Paste the line into the
+         "Launch Options" box and close the window.
+    Now pressing Play on Quake in Steam starts Quake RT. To undo it, empty
+    that box again.
+
+
+UNINSTALLING
+------------
+
+Windows Settings > Apps > Installed apps > Quake RT > Uninstall.
+Your saved games stay in %APPDATA%\QuakeRT in case you come back.
+
+
+Quake RT is free, open-source software (GPL). It is not made or supported by
+id Software, Bethesda or NVIDIA. Source code and updates:
+https://github.com/Bliggs1984/vkquake-rt

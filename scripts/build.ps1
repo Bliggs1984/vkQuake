@@ -141,7 +141,7 @@ Copy-Item (Join-Path $Root 'Misc\ovrd\*') "$dist\ovrd" -Recurse -Force
 Copy-Item (Join-Path $Rtgl1 'Tools\BlueNoise_LDR_RGBA_128.ktx2') "$dist\ovrd"
 Copy-Item (Join-Path $Rtgl1 'Build\*.spv') "$dist\ovrd\shaders"
 Copy-Item (Join-Path $Root 'Packaging\Windows\THIRD_PARTY_NOTICES.txt') $dist
-Copy-Item (Join-Path $Root 'Packaging\Windows\vkQuakeFullscreen.bat') $dist
+Copy-Item (Join-Path $Root 'Packaging\Windows\HOW-TO-PLAY.txt') $dist
 Copy-Item (Join-Path $Root 'LICENSE.txt') $dist
 
 $zip = Join-Path $Root "Dist\quake-rt-$version-win64.zip"

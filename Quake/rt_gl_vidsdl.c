@@ -1725,10 +1725,11 @@ void VID_Init (void)
 
 	if (width <= 0 || height <= 0)
 	{
+		// RT: no saved mode yet (vid_width "-1" on first run): fullscreen at the desktop resolution
 		width = display_width;
 		height = display_height;
 		refreshrate = display_refreshrate;
-		fullscreen = false;
+		fullscreen = !(COM_CheckParm ("-window") || COM_CheckParm ("-w"));
 	}
 
 	if (!VID_ValidMode (width, height, refreshrate, fullscreen))
@@ -1753,7 +1754,7 @@ void VID_Init (void)
 	const qboolean explicit_mode = COM_CheckParm ("-window") || COM_CheckParm ("-width") || COM_CheckParm ("-height") || COM_CheckParm ("-fullscreen");
 	if (CVAR_TO_BOOL (_rt_firsttime) && !explicit_mode)
 	{
-		if (!fullscreen)
+		// first run is fullscreen at the desktop resolution (see above); on 4K-class displays offer 1440p
 		{
 			const int maxheight = 1440;
 
@@ -1761,8 +1762,9 @@ void VID_Init (void)
 			{
 				int msgbox_id = MessageBoxA (
 					NULL, 
-					"Resolution of your display is quite high,\nwhich may cause low frame rates.\nRun at 1440p?", 
-					"High-resolution",
+					"Your screen has a very high resolution.\n\nRay tracing runs much faster at 1440p and still looks sharp.\n"
+					"Play at 1440p? (recommended)\n\nYou can change this later in Options > Video.",
+					"Quake RT",
 					MB_ICONEXCLAMATION | MB_YESNO);
 
 				if (msgbox_id == IDYES)

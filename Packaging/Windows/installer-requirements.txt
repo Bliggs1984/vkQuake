@@ -1,0 +1,18 @@
+Before you install Quake RT, check you have:
+
+  - Windows 10 or 11 (64-bit)
+
+  - An NVIDIA RTX graphics card (RTX 2060 or newer).
+    Recent AMD cards (RX 6000 series or newer) should also work.
+    Older GTX cards will not work.
+
+  - Quake, installed from Steam (or GOG / Epic Games Store).
+    Quake RT uses your own copy of the game.
+
+  - Up-to-date graphics drivers (NVIDIA App > Drivers > Download).
+
+After installing, double-click the "Quake RT" icon on your desktop.
+Start Steam first if you want your Quake achievements to unlock.
+
+A "How to play" guide opens when the installer finishes and is also
+in the Start menu under Quake RT.
