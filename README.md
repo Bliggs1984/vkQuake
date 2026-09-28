@@ -58,8 +58,8 @@ cd vkquake-rt
 [NVIDIA DLSS SDK](https://github.com/NVIDIA/DLSS) and builds `vkQuake.exe` in the `RT-Release` configuration.
 The `Release` configuration still builds stock vkQuake. The ray tracer is a compile-time switch (`RT_RENDERER`).
 
-Branches: `rt-1.36` is Quake RT 2.x on vkQuake 1.36. `modernise-2026` is the 1.1.0 update of the original
-fork (vkQuake 1.20.3, DLSS 4.5). `master` is the original 2022 code.
+This repository only carries the current version (`rt-1.36`, Quake RT 2.x on vkQuake 1.36). The original 2022
+code and its releases are at [sultim-t/vkquake-rt](https://github.com/sultim-t/vkquake-rt).
 
 ## Credits and licence
 
